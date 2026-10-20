@@ -1,0 +1,873 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="任務看板">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="theme-color" content="#f4f5f7" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#1d2125" media="(prefers-color-scheme: dark)">
+<title>我的任務看板</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Sortable/1.15.2/Sortable.min.js"></script>
+<style>
+  :root {
+    --bg: #f4f5f7; --col: #ebecf0; --card: #ffffff; --text: #172b4d; --muted: #5e6c84;
+    --accent: #0c66e4; --danger: #c9372c; --warn: #b65c02; --ok: #1f845a; --border: #dfe1e6;
+    --bar: rgba(255,255,255,.92);
+    --shadow: 0 1px 1px rgba(9,30,66,.25), 0 0 1px rgba(9,30,66,.31);
+    /* 卡片淺色系 */
+    --c-yellow: #fff6cc; --c-green: #dcf7e8; --c-blue: #e3efff; --c-pink: #ffe6f2;
+    --c-purple: #efe9ff; --c-orange: #ffecdc; --c-gray: #eceef1;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #1d2125; --col: #101214; --card: #22272b; --text: #dee4ea; --muted: #9fadbc;
+      --accent: #579dff; --danger: #f87168; --warn: #f5cd47; --ok: #4bce97; --border: #2c333a;
+      --bar: rgba(29,33,37,.92);
+      --shadow: 0 1px 1px rgba(0,0,0,.5);
+      --c-yellow: #3f3618; --c-green: #1d3a2c; --c-blue: #1e2f48; --c-pink: #43243a;
+      --c-purple: #2f2a4a; --c-orange: #43301e; --c-gray: #30363d;
+    }
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  body { margin: 0; background: var(--bg); color: var(--text);
+    font: 15px/1.45 -apple-system, BlinkMacSystemFont, "PingFang TC", "Noto Sans TC", "Microsoft JhengHei", sans-serif; }
+  button { font: inherit; cursor: pointer; border: 1px solid var(--border); background: var(--card);
+    color: var(--text); border-radius: 6px; padding: 6px 10px; }
+  button:hover { border-color: var(--accent); }
+  button.primary { background: var(--accent); color: #fff; border-color: var(--accent); }
+  button.danger { color: var(--danger); }
+
+  /* ---------- 頂部 ---------- */
+  .top { display: flex; align-items: center; gap: 10px; padding: 12px 16px; position: relative; }
+  .top h1 { font-size: 18px; margin: 0; flex: 1; }
+  .sync { font-size: 13px; color: var(--muted); display: flex; align-items: center; gap: 6px; }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--ok); flex: none; }
+  .sync.saving .dot { background: var(--warn); }
+  .sync.error .dot { background: var(--danger); }
+  .sync.demo .dot { background: var(--muted); }
+  .menuBtn { display: none; border: none; background: transparent; font-size: 20px; line-height: 1; padding: 4px 8px; }
+  .menu { position: absolute; right: 12px; top: 48px; background: var(--card); border-radius: 12px; z-index: 20;
+    box-shadow: 0 8px 30px rgba(0,0,0,.25); padding: 6px; display: none; min-width: 170px; }
+  .menu.open { display: block; }
+  .menu button { display: block; width: 100%; text-align: left; border: none; background: transparent; padding: 10px 12px; border-radius: 8px; }
+  .menu button:active { background: var(--col); }
+
+  /* ---------- 看板（電腦版：三欄並排） ---------- */
+  .board { display: grid; grid-template-columns: repeat(3, minmax(260px, 1fr)); gap: 12px;
+    padding: 0 16px 24px; align-items: start; }
+  .ptr { display: none; }
+  .col { background: var(--col); border-radius: 12px; padding: 10px; display: flex; flex-direction: column;
+    max-height: calc(100vh - 80px); }
+  .col header { display: flex; align-items: center; justify-content: space-between; padding: 2px 4px 8px; }
+  .col h2 { font-size: 15px; margin: 0; }
+  .count { font-size: 12px; color: var(--muted); background: var(--card); border-radius: 10px; padding: 1px 8px; }
+  .list { min-height: 40px; overflow-y: auto; overflow-x: hidden; display: flex; flex-direction: column; gap: 8px; padding: 2px; }
+
+  /* ---------- 卡片 ---------- */
+  .card { position: relative; display: flex; gap: 10px; align-items: flex-start; background: var(--card);
+    border-radius: 8px; padding: 9px 11px; box-shadow: var(--shadow); cursor: grab;
+    user-select: none; -webkit-user-select: none; transition: transform .2s, opacity .2s, background .15s; }
+  .card:hover { outline: 2px solid var(--accent); outline-offset: -2px; }
+  .card .body { flex: 1; min-width: 0; }
+  .card .t { word-break: break-word; }
+  .col[data-status="完成"] .card .t { text-decoration: line-through; color: var(--muted); }
+  .lbl { display: inline-block; font-size: 11px; font-weight: 600; letter-spacing: .3px;
+    color: var(--accent); background: color-mix(in srgb, var(--accent) 14%, transparent);
+    border-radius: 4px; padding: 0 6px; margin-bottom: 4px; font-variant-numeric: tabular-nums; }
+  .meta { display: flex; gap: 8px; margin-top: 6px; font-size: 12px; color: var(--muted); flex-wrap: wrap; }
+  .meta:empty { display: none; }
+  .due.overdue { color: var(--danger); font-weight: 600; }
+  .due.today { color: var(--warn); font-weight: 600; }
+  .ghost { opacity: .35; }
+  .card[data-color="yellow"] { background: var(--c-yellow); }
+  .card[data-color="green"]  { background: var(--c-green); }
+  .card[data-color="blue"]   { background: var(--c-blue); }
+  .card[data-color="pink"]   { background: var(--c-pink); }
+  .card[data-color="purple"] { background: var(--c-purple); }
+  .card[data-color="orange"] { background: var(--c-orange); }
+  .card[data-color="gray"]   { background: var(--c-gray); }
+
+  /* 顏色圓點 */
+  .sw { width: 28px; height: 28px; padding: 0; border-radius: 50%; flex: none;
+    border: 1.5px solid color-mix(in srgb, var(--muted) 45%, transparent); background: var(--card); position: relative; }
+  .sw[data-color=""]::after { content: ''; position: absolute; left: 50%; top: 3px; bottom: 3px; width: 1.5px;
+    background: var(--muted); transform: translateX(-50%) rotate(45deg); opacity: .7; }
+  .sw[data-color="yellow"] { background: var(--c-yellow); }
+  .sw[data-color="green"]  { background: var(--c-green); }
+  .sw[data-color="blue"]   { background: var(--c-blue); }
+  .sw[data-color="pink"]   { background: var(--c-pink); }
+  .sw[data-color="purple"] { background: var(--c-purple); }
+  .sw[data-color="orange"] { background: var(--c-orange); }
+  .sw[data-color="gray"]   { background: var(--c-gray); }
+  .sw.on { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .sw:hover { border-color: var(--accent); }
+  .swBtn { width: 26px; height: 26px; }
+  .swRow { display: flex; gap: 10px; flex-wrap: wrap; padding: 2px; }
+  .pop { position: fixed; z-index: 40; display: none; gap: 10px; padding: 10px 12px; border-radius: 14px;
+    background: var(--card); box-shadow: 0 8px 30px rgba(0,0,0,.25); }
+  .pop.open { display: flex; }
+
+  .chk { flex: none; width: 22px; height: 22px; margin-top: 1px; padding: 0; border-radius: 50%;
+    border: 2px solid var(--muted); background: transparent; display: grid; place-items: center; }
+  .chk svg { width: 14px; height: 14px; fill: none; stroke: #fff; stroke-width: 3; stroke-linecap: round;
+    stroke-linejoin: round; opacity: 0; }
+  .col[data-status="完成"] .chk, .card.checking .chk { background: var(--ok); border-color: var(--ok); }
+  .col[data-status="完成"] .chk svg, .card.checking .chk svg { opacity: 1; }
+  .card.checking { opacity: .5; }
+
+  /* 左滑提示 */
+  .card.swiping { transition: none; }
+  .card.swiping::after { content: attr(data-hint); position: absolute; left: calc(100% + 14px); top: 50%;
+    transform: translateY(-50%); white-space: nowrap; font-size: 13px; color: var(--muted); }
+  .card.armed { background: color-mix(in srgb, var(--accent) 12%, var(--card)); }
+  .card.armed::after { color: var(--accent); font-weight: 600; }
+
+  .add { display: flex; align-items: center; gap: 6px; margin-top: 8px; padding-left: 4px; }
+  .add input { flex: 1; min-width: 0; padding: 8px 10px; border-radius: 8px; border: 1px solid transparent;
+    background: transparent; color: var(--text); font: inherit; }
+  .add input:hover { background: var(--card); }
+  .add input:focus { background: var(--card); border-color: var(--accent); outline: none; }
+
+  .composer, .tabs { display: none; }
+
+  /* ---------- 編輯視窗 ---------- */
+  dialog { border: none; border-radius: 12px; padding: 0; width: min(440px, calc(100vw - 32px));
+    background: var(--card); color: var(--text); box-shadow: 0 8px 30px rgba(0,0,0,.3); }
+  dialog::backdrop { background: rgba(9,30,66,.45); }
+  dialog form { padding: 18px; display: flex; flex-direction: column; gap: 12px; }
+  .grip { display: none; }
+  dialog label { font-size: 13px; color: var(--muted); display: flex; flex-direction: column; gap: 4px; }
+  dialog input, dialog textarea, dialog select { font: inherit; padding: 8px 10px; border-radius: 6px;
+    border: 1px solid var(--border); background: var(--bg); color: var(--text); }
+  dialog textarea { min-height: 90px; resize: vertical; }
+  dialog input:focus, dialog textarea:focus, dialog select:focus { outline: none; border-color: var(--accent); }
+  .grip:focus { outline: none; }
+  .row { display: flex; gap: 10px; }
+  .row > * { flex: 1; }
+  .actions { display: flex; gap: 8px; justify-content: flex-end; }
+  .actions .danger { margin-right: auto; }
+  .stamp { font-size: 12px; color: var(--muted); }
+
+  /* ---------- PIN 碼解鎖畫面 ---------- */
+  .lock { position: fixed; inset: 0; z-index: 50; background: var(--bg); display: none; padding: 24px; }
+  .lock.open { display: flex; align-items: center; justify-content: center; }
+  .lockBox { width: 100%; max-width: 300px; text-align: center; display: flex; flex-direction: column; gap: 14px; }
+  .lockBox .ic { font-size: 40px; }
+  .lockBox h2 { margin: 0; font-size: 20px; }
+  .lockBox p { margin: 0; color: var(--muted); font-size: 14px; min-height: 20px; }
+  .lockBox p.err { color: var(--danger); }
+  .lockBox input { width: 100%; min-width: 0; font: inherit; font-size: 26px; letter-spacing: 10px; text-align: center; padding: 12px;
+    border-radius: 12px; border: 1px solid var(--border); background: var(--card); color: var(--text); }
+  .lockBox input:focus { outline: none; border-color: var(--accent); }
+  .lockBox button { padding: 12px; font-size: 16px; border-radius: 12px; }
+  .lockBox .hint { font-size: 12px; }
+  .lockBox .apiInput { font-size: 14px; letter-spacing: 0; text-align: left; padding: 12px; }
+  .lockBox input::placeholder { letter-spacing: 0; font-size: 15px; }
+  .linkBtn { border: none; background: transparent; color: var(--accent); font-size: 13px; padding: 2px; }
+  .lockBox .apiInput[hidden], .linkBtn[hidden] { display: none; }
+  .shake { animation: shake .35s; }
+  @keyframes shake { 20%, 60% { transform: translateX(-8px); } 40%, 80% { transform: translateX(8px); } }
+
+  /* ---------- 提示訊息 ---------- */
+  .toast { position: fixed; left: 50%; bottom: 24px; transform: translate(-50%, 20px); opacity: 0; pointer-events: none;
+    background: #172b4d; color: #fff; border-radius: 10px; padding: 10px 14px; display: flex; gap: 14px;
+    align-items: center; font-size: 14px; transition: .2s; z-index: 30; max-width: calc(100vw - 32px); }
+  .toast.show { opacity: 1; transform: translate(-50%, 0); pointer-events: auto; }
+  .toast button { border: none; background: transparent; color: #85b8ff; font-weight: 600; padding: 0; }
+
+  /* =========================================================
+     手機直式：一次一欄 + 底部分頁 + 底部輸入框
+     ========================================================= */
+  @media (max-width: 760px) {
+    html, body { height: 100%; }
+    body { display: flex; flex-direction: column; overflow: hidden; overscroll-behavior: none; }
+    .top { padding: calc(10px + env(safe-area-inset-top)) 12px 8px 16px; }
+    .top h1 { font-size: 20px; }
+    .desk, .sync #syncText { display: none; }
+    .menuBtn { display: block; }
+
+    .board { flex: 1; min-height: 0; display: flex; flex-direction: column; align-items: stretch; padding: 0; gap: 0; }
+    .ptr { display: block; height: 0; overflow: hidden; text-align: center; font-size: 13px; color: var(--muted);
+      line-height: 40px; transition: height .2s; flex: none; }
+    .ptr.pulling { transition: none; }
+    .col { display: none; background: transparent; border-radius: 0; padding: 0; max-height: none; }
+    .col.active { display: flex; flex: 1; min-height: 0; }
+    .col header, .col .add { display: none; }
+    .list { flex: 1; padding: 6px 16px 16px; gap: 8px; -webkit-overflow-scrolling: touch; }
+    .list:empty::before { content: '這裡還沒有卡片'; color: var(--muted); text-align: center; padding: 48px 0; }
+    .card { padding: 12px 14px; font-size: 16px; border-radius: 10px; touch-action: pan-y; }
+    .card:hover { outline: none; }
+    .chk { width: 24px; height: 24px; }
+
+    .composer { display: flex; gap: 8px; padding: 8px 12px; background: var(--bar);
+      border-top: 1px solid var(--border); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); }
+    .composer { align-items: center; }
+    .composer .swBtn { width: 32px; height: 32px; }
+    .composer input { flex: 1; min-width: 0; font-size: 16px; padding: 10px 14px; border-radius: 20px;
+      border: 1px solid var(--border); background: var(--card); color: var(--text); }
+    .composer input:focus { outline: none; border-color: var(--accent); }
+    .composer button[type="submit"] { width: 42px; height: 42px; border-radius: 50%; border: none; background: var(--accent);
+      color: #fff; font-size: 22px; padding: 0; flex: none; }
+
+    .tabs { display: flex; background: var(--bar); border-top: 1px solid var(--border);
+      padding-bottom: env(safe-area-inset-bottom); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); }
+    .tab { flex: 1; border: none; background: transparent; border-radius: 0; padding: 8px 4px 6px;
+      display: flex; flex-direction: column; align-items: center; gap: 2px; font-size: 11px; color: var(--muted); position: relative; }
+    .tab svg { width: 24px; height: 24px; fill: none; stroke: currentColor; stroke-width: 1.8;
+      stroke-linecap: round; stroke-linejoin: round; }
+    .tab.on { color: var(--accent); font-weight: 600; }
+    .tab .tc { position: absolute; top: 4px; left: calc(50% + 8px); min-width: 18px; height: 18px; border-radius: 9px;
+      background: var(--accent); color: #fff; font-size: 11px; line-height: 18px; padding: 0 5px; font-weight: 600; }
+    .tab .tc:empty, .tab .tc[data-zero] { display: none; }
+
+    dialog { width: 100%; max-width: 100%; margin: auto 0 0; border-radius: 18px 18px 0 0;
+      padding-bottom: env(safe-area-inset-bottom); max-height: 90dvh; }
+    dialog[open] { animation: sheet .22s ease-out; }
+    @keyframes sheet { from { transform: translateY(100%); } }
+    dialog form { padding: 10px 18px 18px; }
+    .grip { display: block; width: 40px; height: 5px; border-radius: 3px; background: var(--border); margin: 0 auto 4px; }
+    dialog input, dialog textarea, dialog select { font-size: 16px; padding: 10px 12px; }
+    .actions button { padding: 10px 14px; }
+
+    .toast { bottom: calc(130px + env(safe-area-inset-bottom)); }
+  }
+</style>
+</head>
+<body>
+  <div class="top">
+    <h1>我的任務看板</h1>
+    <span class="sync" id="sync"><span class="dot"></span><span id="syncText">載入中…</span></span>
+    <button class="desk" id="refreshBtn" title="從試算表重新讀取">重新整理</button>
+    <button class="desk" id="archiveBtn" title="把完成的卡片移到「封存」工作表">封存已完成</button>
+    <button class="desk" id="logoutBtn" title="這台裝置需要重新輸入 PIN 碼">登出</button>
+    <button class="menuBtn" id="menuBtn" aria-label="更多">⋯</button>
+    <div class="menu" id="menu">
+      <button id="mRefresh">重新整理</button>
+      <button id="mArchive">封存已完成</button>
+      <button id="mLogout">登出這台裝置</button>
+    </div>
+  </div>
+
+  <main class="board" id="board"></main>
+
+  <form class="composer" id="composer">
+    <button type="button" class="sw swBtn" data-color="" aria-label="卡片顏色"></button>
+    <input id="composerInput" placeholder="新增到「待辦」" enterkeyhint="done" autocomplete="off">
+    <button type="submit" aria-label="新增">＋</button>
+  </form>
+  <nav class="tabs" id="tabs"></nav>
+
+  <dialog id="editDlg">
+    <form method="dialog" id="editForm">
+      <div class="grip" tabindex="-1" autofocus></div>
+      <label>標題<input name="title" required></label>
+      <label>備註<textarea name="note"></textarea></label>
+      <div class="row">
+        <label>狀態<select name="status"></select></label>
+        <label>截止日<input name="due" type="date"></label>
+      </div>
+      <label>顏色<div class="swRow" id="editColors"></div></label>
+      <div class="stamp" id="stamp"></div>
+      <div class="actions">
+        <button type="button" class="danger" id="deleteBtn">刪除</button>
+        <button type="button" id="cancelBtn">取消</button>
+        <button type="submit" class="primary">儲存</button>
+      </div>
+    </form>
+  </dialog>
+
+  <div class="pop" id="pop"></div>
+
+  <div class="lock" id="lock">
+    <form class="lockBox" id="lockForm" autocomplete="off">
+      <div class="ic">🔒</div>
+      <h2>我的任務看板</h2>
+      <p id="lockMsg">請輸入 PIN 碼</p>
+      <input id="apiInput" class="apiInput" type="url" inputmode="url" placeholder="貼上 Apps Script 網址（…/exec）"
+        aria-label="Apps Script 網址" spellcheck="false" autocapitalize="off">
+      <input id="pinInput" type="password" inputmode="numeric" pattern="[0-9]*" maxlength="12" aria-label="PIN 碼" placeholder="PIN 碼">
+      <button type="submit" class="primary">解鎖</button>
+      <button type="button" class="linkBtn" id="changeApi">變更 Apps Script 網址</button>
+      <p class="hint" id="lockHint"></p>
+    </form>
+  </div>
+
+  <div class="toast" id="toast"><span id="toastText"></span><button id="toastUndo">復原</button></div>
+
+<script>
+const STATUSES = ['待辦', '完成', '資訊儲藏區'];
+const ICONS = {
+  '待辦': '<svg viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="4"/><path d="M8 9.5h8M8 14.5h5"/></svg>',
+  '完成': '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M8 12.5l2.7 2.7L16 9.8"/></svg>',
+  '資訊儲藏區': '<svg viewBox="0 0 24 24"><path d="M3.5 7.5a2 2 0 0 1 2-2h4l2 2h7a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-13a2 2 0 0 1-2-2z"/></svg>'
+};
+const COLORS = [
+  ['', '無'], ['yellow', '黃'], ['green', '綠'], ['blue', '藍'],
+  ['pink', '粉'], ['purple', '紫'], ['orange', '橘'], ['gray', '灰']
+];
+let newColor = '';      // 新增卡片時使用的顏色（會記住上次選的）
+const swatches = (cur) => COLORS.map(([k, n]) =>
+  `<button type="button" class="sw${k === cur ? ' on' : ''}" data-color="${k}" title="${n}" aria-label="${n}"></button>`).join('');
+const CHECK = '<svg viewBox="0 0 24 24"><path d="M6.5 12.5l3.5 3.5 7.5-8"/></svg>';
+let cards = [];
+let pending = 0;
+let editingId = null;
+let activeTab = '待辦';
+let dragging = false;
+let swipedAt = 0;
+let token = null;
+try { token = localStorage.getItem('kanban-token'); } catch (e) {}
+const mobile = window.matchMedia('(max-width: 760px)');
+const $ = (id) => document.getElementById(id);
+
+/* ---------- 資料存取：在 Apps Script 中連到試算表，否則用示範模式 ---------- */
+/* 示範模式：網址加上 ?demo，或預覽時才會開啟 */
+const isDemo = !!window.KANBAN_DEMO || /[?&]demo\b/.test(location.search);
+let apiUrl = '';
+try { apiUrl = localStorage.getItem('kanban-api') || ''; } catch (e) {}
+const api = isDemo ? demoApi() : httpApi();
+
+/* 呼叫 Apps Script 資料窗口。用 text/plain 避免跨網域預檢，且不帶 Google 登入資訊，
+   所以不會被轉到 /u/數字/ 的帳號網址。 */
+function httpApi() {
+  const call = async (action, payload) => {
+    let res, data;
+    try {
+      res = await fetch(apiUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify(Object.assign({ action, token }, payload || {}))
+      });
+      data = await res.json();
+    } catch (e) {
+      throw new Error('NETWORK');
+    }
+    if (!data || !data.ok) throw new Error((data && data.error) || 'ERROR');
+    return data;
+  };
+  return {
+    login: (pin) => call('login', { pin }).then(d => d.token),
+    list: () => call('list').then(d => d.cards),
+    save: (list) => call('save', { cards: list }),
+    remove: (id) => call('delete', { id }),
+    archive: () => call('archive').then(d => d.cards)
+  };
+}
+
+/* 使用者貼上的網址整理成標準格式（去掉 /u/數字/、多餘空白與參數） */
+function normalizeApi(u) {
+  u = String(u || '').trim().replace(/[?#].*$/, '').replace(/\/macros\/u\/\d+\//, '/macros/');
+  return /^https:\/\/script\.google\.com\/.+\/exec$/.test(u) ? u : '';
+}
+
+function demoApi() {
+  const KEY = 'kanban-demo-v2';
+  let mem = null;
+  const md = () => today().slice(5).replace('-', '');
+  const seed = () => [
+    { id: 'd1', label: md() + '-T-01', title: '回覆廠商報價信', note: '', status: '待辦', order: 0, due: today(), color: 'yellow' },
+    { id: 'd2', label: md() + '-T-02', title: '整理本週會議紀錄', note: '週五前寄給大家', status: '待辦', order: 1, due: '' },
+    { id: 'd5', label: md() + '-T-04', title: '確認下週實習課分組名單', note: '', status: '待辦', order: 2, due: '', color: 'green' },
+    { id: 'd3', label: md() + '-T-03', title: '繳交出差單', note: '', status: '完成', order: 0, due: '' },
+    { id: 'd4', label: md() + '-C-01', title: '實習工場設備清單連結', note: '放在共用雲端「設備」資料夾', status: '資訊儲藏區', order: 0, due: '', color: 'blue' }
+  ];
+  const nextLabel = (all, status) => {
+    const p = md() + '-' + (status === '資訊儲藏區' ? 'C' : 'T') + '-';
+    const n = all.reduce((m, c) => c.label && c.label.startsWith(p) ? Math.max(m, Number(c.label.slice(p.length)) || 0) : m, 0) + 1;
+    return p + String(n).padStart(2, '0');
+  };
+  const load = () => {
+    try { const s = JSON.parse(localStorage.getItem(KEY)); if (s) return s; } catch (e) {}
+    return mem || seed();
+  };
+  const store = (list) => { mem = list; try { localStorage.setItem(KEY, JSON.stringify(list)); } catch (e) {} };
+  const wait = (v) => new Promise(r => setTimeout(() => r(v), 150));
+  return {
+    login: (pin) => pin === '1234' ? wait('demo-token')
+      : new Promise((r, rej) => setTimeout(() => rej(new Error('BAD_PIN')), 300)),
+    list: () => wait(JSON.parse(JSON.stringify(load()))),
+    save: (list) => { const all = load(); const labels = {}; list.forEach(c => {
+        const i = all.findIndex(x => x.id === c.id);
+        const copy = { ...c, label: i >= 0 ? all[i].label : nextLabel(all, c.status) };
+        if (i >= 0) all[i] = copy; else { all.push(copy); labels[c.id] = copy.label; } });
+      store(all); return wait({ ok: true, labels }); },
+    remove: (id) => { store(load().filter(c => c.id !== id)); return wait({ ok: true }); },
+    archive: () => { const left = load().filter(c => c.status !== '完成'); store(left); return wait(left); }
+  };
+}
+
+/* ---------- 工具 ---------- */
+function today() {
+  const d = new Date();
+  return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+}
+function newId() { return 't' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6); }
+function esc(s) { return String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
+function byId(id) { return cards.find(c => c.id === id); }
+function peers(status, exceptId) { return cards.filter(c => c.status === status && c.id !== exceptId); }
+
+function setSync(state, text) {
+  $('sync').className = 'sync ' + state;
+  $('syncText').textContent = text;
+}
+function idleSync() { setSync(isDemo ? 'demo' : '', isDemo ? '示範模式（未連接試算表）' : '已同步'); }
+
+function persist(promiseFn) {
+  pending++;
+  setSync('saving', '儲存中…');
+  return promiseFn().then(r => {
+    pending--;
+    if (r && r.labels) applyLabels(r.labels);
+    if (!pending) idleSync();
+    return r;
+  }).catch(err => {
+    pending--;
+    if (errCode(err) === 'AUTH_REQUIRED') return showLogin('請重新輸入 PIN 碼');
+    setSync('error', '同步失敗，請重新整理');
+    showToast('同步失敗，請重新整理');
+    console.error(err);
+  });
+}
+
+/* 伺服器配好標籤後，直接更新卡片上的標籤（不重畫整個看板，避免打斷拖曳） */
+function applyLabels(labels) {
+  Object.keys(labels).forEach(id => {
+    const c = byId(id);
+    if (c) c.label = labels[id];
+    const el = document.querySelector('.card[data-id="' + CSS.escape(id) + '"] .lbl');
+    if (el) el.textContent = labels[id];
+  });
+}
+
+/* ---------- 提示訊息（可復原） ---------- */
+let toastTimer = null, toastUndo = null;
+function showToast(text, undo) {
+  $('toastText').textContent = text;
+  toastUndo = undo || null;
+  $('toastUndo').style.display = undo ? '' : 'none';
+  $('toast').classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => $('toast').classList.remove('show'), 4000);
+}
+$('toastUndo').onclick = () => { $('toast').classList.remove('show'); if (toastUndo) toastUndo(); toastUndo = null; };
+
+/* ---------- 畫面 ---------- */
+function buildBoard() {
+  const board = $('board');
+  board.innerHTML = '<div class="ptr" id="ptr">下拉重新整理</div>' + STATUSES.map(s => `
+    <section class="col" data-status="${s}">
+      <header><h2>${s}</h2><span class="count">0</span></header>
+      <div class="list"></div>
+      <form class="add"><button type="button" class="sw swBtn" data-color="" aria-label="卡片顏色"></button><input placeholder="＋ 新增任務" enterkeyhint="done"></form>
+    </section>`).join('');
+
+  $('tabs').innerHTML = STATUSES.map(s =>
+    `<button class="tab" data-status="${s}">${ICONS[s]}<span>${s}</span><span class="tc"></span></button>`).join('');
+  $('tabs').addEventListener('click', e => { const b = e.target.closest('.tab'); if (b) setTab(b.dataset.status); });
+
+  board.querySelectorAll('.list').forEach(list => {
+    bindPullToRefresh(list);
+    if (!window.Sortable) return;   // 拖曳函式庫沒載入時，其他功能照常
+    Sortable.create(list, {
+      group: 'board', animation: 150, ghostClass: 'ghost',
+      delay: 200, delayOnTouchOnly: true, touchStartThreshold: 6,
+      filter: '.chk', preventOnFilter: false,
+      onStart: () => { dragging = true; },
+      onEnd: () => { dragging = false; syncFromDom(); }
+    });
+  });
+
+  board.querySelectorAll('.add').forEach(form => {
+    form.addEventListener('submit', e => {
+      e.preventDefault();
+      const input = form.querySelector('input');
+      if (addCard(form.closest('.col').dataset.status, input.value)) input.value = '';
+    });
+  });
+
+  board.addEventListener('click', e => {
+    if (Date.now() - swipedAt < 400) return;
+    const chk = e.target.closest('.chk');
+    const el = e.target.closest('.card');
+    if (chk && el) { e.stopPropagation(); toggleDone(el); return; }
+    if (el) openEdit(el.dataset.id);
+  });
+
+  bindSwipe(board);
+}
+
+function setTab(status) {
+  activeTab = status;
+  try { localStorage.setItem('kanban-tab', status); } catch (e) {}
+  document.querySelectorAll('.col').forEach(c => c.classList.toggle('active', c.dataset.status === status));
+  document.querySelectorAll('.tab').forEach(t => t.classList.toggle('on', t.dataset.status === status));
+  $('composerInput').placeholder = '新增到「' + status + '」';
+}
+
+function cardHtml(c) {
+  const t = today();
+  let due = '';
+  if (c.due) {
+    const cls = c.status !== '完成' && c.due < t ? 'overdue' : (c.status !== '完成' && c.due === t ? 'today' : '');
+    due = `<span class="due ${cls}">📅 ${esc(c.due.slice(5).replace('-', '/'))}${cls === 'overdue' ? ' 逾期' : cls === 'today' ? ' 今天' : ''}</span>`;
+  }
+  const note = c.note ? '<span>📝 備註</span>' : '';
+  const chk = c.status === '資訊儲藏區' ? '' :
+    `<button class="chk" aria-label="${c.status === '完成' ? '標為未完成' : '標為完成'}">${CHECK}</button>`;
+  return `<div class="card" data-id="${esc(c.id)}" data-color="${esc(c.color || '')}">${chk}<div class="body"><span class="lbl">${esc(c.label || '…')}</span>` +
+    `<div class="t">${esc(c.title)}</div><div class="meta">${due}${note}</div></div></div>`;
+}
+
+function render() {
+  document.querySelectorAll('.col').forEach(col => {
+    const status = col.dataset.status;
+    const items = cards.filter(c => c.status === status).sort((a, b) => a.order - b.order);
+    col.querySelector('.list').innerHTML = items.map(cardHtml).join('');
+    col.querySelector('.count').textContent = items.length;
+    const tc = document.querySelector('.tab[data-status="' + status + '"] .tc');
+    tc.textContent = status === '完成' ? '' : items.length;   // 完成不顯示數字徽章
+    tc.toggleAttribute('data-zero', items.length === 0);
+  });
+}
+
+/* ---------- 新增／移動 ---------- */
+function addCard(status, title) {
+  title = (title || '').trim();
+  if (!title) return false;
+  const max = peers(status).reduce((m, c) => Math.max(m, c.order), -1);
+  const card = { id: newId(), title, note: '', status, order: max + 1, due: '', color: newColor };
+  cards.push(card);
+  render();
+  const list = document.querySelector('.col[data-status="' + status + '"] .list');
+  list.scrollTop = list.scrollHeight;
+  persist(() => api.save([card]));
+  return true;
+}
+
+function moveTo(c, status, toTop) {
+  const prev = { status: c.status, order: c.order };
+  const others = peers(status, c.id);
+  c.order = toTop ? others.reduce((m, x) => Math.min(m, x.order), 1) - 1
+                  : others.reduce((m, x) => Math.max(m, x.order), -1) + 1;
+  c.status = status;
+  render();
+  persist(() => api.save([{ ...c }]));
+  showToast('已移到「' + status + '」', () => {
+    c.status = prev.status; c.order = prev.order;
+    render();
+    persist(() => api.save([{ ...c }]));
+  });
+}
+
+function toggleDone(el) {
+  const c = byId(el.dataset.id);
+  if (!c) return;
+  if (c.status === '完成') return moveTo(c, '待辦', false);
+  el.classList.add('checking');
+  setTimeout(() => moveTo(c, '完成', true), 250);
+}
+
+/* 拖曳結束：依畫面順序更新狀態與順序，只送出有變動的卡片 */
+function syncFromDom() {
+  const changed = [];
+  document.querySelectorAll('.col').forEach(col => {
+    const status = col.dataset.status;
+    col.querySelectorAll('.card').forEach((el, i) => {
+      const c = byId(el.dataset.id);
+      if (!c) return;
+      if (c.status !== status || c.order !== i) {
+        c.status = status;
+        c.order = i;
+        changed.push({ ...c });
+      }
+    });
+  });
+  render();
+  if (changed.length) persist(() => api.save(changed));
+}
+
+/* ---------- 手勢：卡片左滑 → 移到資訊儲藏區（在資訊儲藏區則移回待辦） ---------- */
+function bindSwipe(board) {
+  const LIMIT = 90;
+  let sw = null;
+  board.addEventListener('touchstart', e => {
+    const el = e.target.closest('.card');
+    if (!el || dragging || e.target.closest('.chk')) return;
+    const t = e.touches[0];
+    sw = { el, x: t.clientX, y: t.clientY, dx: 0, on: false };
+  }, { passive: true });
+  board.addEventListener('touchmove', e => {
+    if (!sw || dragging) return;
+    const t = e.touches[0];
+    const dx = t.clientX - sw.x, dy = t.clientY - sw.y;
+    if (!sw.on) {
+      if (Math.abs(dx) > 12 && Math.abs(dx) > Math.abs(dy) * 1.5 && dx < 0) {
+        const c = byId(sw.el.dataset.id);
+        sw.target = c && c.status === '資訊儲藏區' ? '待辦' : '資訊儲藏區';
+        sw.el.dataset.hint = '移到「' + sw.target + '」';
+        sw.el.classList.add('swiping');
+        sw.on = true;
+      } else if (Math.abs(dy) > 12) { sw = null; }
+      return;
+    }
+    sw.dx = Math.min(0, dx);
+    sw.el.style.transform = 'translateX(' + sw.dx + 'px)';
+    sw.el.classList.toggle('armed', sw.dx < -LIMIT);
+  }, { passive: true });
+  const end = (commit) => {
+    if (!sw) return;
+    const { el, on, dx, target } = sw;
+    sw = null;
+    if (!on) return;
+    swipedAt = Date.now();
+    el.style.transform = '';
+    el.classList.remove('swiping', 'armed');
+    if (commit && dx < -LIMIT) { const c = byId(el.dataset.id); if (c) moveTo(c, target, false); }
+  };
+  board.addEventListener('touchend', () => end(true));
+  board.addEventListener('touchcancel', () => end(false));
+}
+
+/* ---------- 手勢：下拉重新整理（手機） ---------- */
+function bindPullToRefresh(list) {
+  const ptr = () => $('ptr');
+  let p = null;
+  list.addEventListener('touchstart', e => {
+    if (!mobile.matches || dragging || list.scrollTop > 0) return;
+    p = { y: e.touches[0].clientY, d: 0 };
+  }, { passive: true });
+  list.addEventListener('touchmove', e => {
+    if (!p) return;
+    if (dragging) { p = null; ptr().style.height = '0'; return; }
+    p.d = Math.max(0, (e.touches[0].clientY - p.y) * 0.5);
+    ptr().classList.add('pulling');
+    ptr().style.height = Math.min(p.d, 60) + 'px';
+    ptr().textContent = p.d > 50 ? '放開以重新整理' : '下拉重新整理';
+  }, { passive: true });
+  list.addEventListener('touchend', () => {
+    if (!p) return;
+    const go = p.d > 50;
+    p = null;
+    ptr().classList.remove('pulling');
+    ptr().style.height = '0';
+    if (go) refresh(true);
+  });
+}
+
+/* ---------- 編輯視窗 ---------- */
+const dlg = $('editDlg');
+const form = $('editForm');
+form.status.innerHTML = STATUSES.map(s => `<option>${s}</option>`).join('');
+
+function openEdit(id) {
+  const c = byId(id);
+  if (!c) return;
+  editingId = id;
+  form.title.value = c.title;
+  form.note.value = c.note || '';
+  form.status.value = c.status;
+  form.due.value = c.due || '';
+  $('editColors').innerHTML = swatches(c.color || '');
+  const parts = [];
+  if (c.label) parts.push('#' + c.label);
+  if (c.createdAt) parts.push('建立 ' + c.createdAt);
+  if (c.doneAt) parts.push('完成 ' + c.doneAt);
+  $('stamp').textContent = parts.join('　');
+  dlg.showModal();
+}
+
+form.addEventListener('submit', e => {
+  e.preventDefault();
+  const c = byId(editingId);
+  if (!c) return dlg.close();
+  const newStatus = form.status.value;
+  if (newStatus !== c.status) {
+    c.order = peers(newStatus).reduce((m, x) => Math.max(m, x.order), -1) + 1;
+    c.status = newStatus;
+  }
+  c.title = form.title.value.trim() || c.title;
+  c.note = form.note.value;
+  c.due = form.due.value;
+  const on = $('editColors').querySelector('.sw.on');
+  c.color = on ? on.dataset.color : '';
+  dlg.close();
+  render();
+  persist(() => api.save([{ ...c }]));
+});
+
+$('editColors').addEventListener('click', e => {
+  const b = e.target.closest('.sw');
+  if (!b) return;
+  e.preventDefault();
+  $('editColors').querySelectorAll('.sw').forEach(x => x.classList.toggle('on', x === b));
+});
+
+/* ---------- 新增卡片時的顏色選擇 ---------- */
+function setNewColor(k) {
+  newColor = k;
+  try { localStorage.setItem('kanban-color', k); } catch (e) {}
+  document.querySelectorAll('.swBtn').forEach(b => b.dataset.color = k);
+}
+document.addEventListener('click', e => {
+  const btn = e.target.closest('.swBtn');
+  const pop = $('pop');
+  if (btn) {
+    e.stopPropagation();
+    if (pop.classList.contains('open') && pop._from === btn) { pop.classList.remove('open'); return; }
+    pop.innerHTML = swatches(newColor);
+    pop._from = btn;
+    pop.classList.add('open');
+    const r = btn.getBoundingClientRect();
+    const w = pop.offsetWidth, h = pop.offsetHeight;
+    const left = Math.max(8, Math.min(r.left - 10, window.innerWidth - w - 8));
+    const above = btn.closest('.composer') || r.bottom + 8 + h > window.innerHeight;
+    const top = above ? r.top - h - 8 : r.bottom + 8;
+    pop.style.left = left + 'px';
+    pop.style.top = top + 'px';
+    return;
+  }
+  const sw = e.target.closest('#pop .sw');
+  if (sw) {
+    setNewColor(sw.dataset.color);
+    pop.classList.remove('open');
+    const input = pop._from && pop._from.parentElement.querySelector('input');
+    if (input) input.focus();
+    return;
+  }
+  if (!e.target.closest('#pop')) pop.classList.remove('open');
+});
+
+/* 點視窗外的暗色背景也能關閉 */
+dlg.addEventListener('click', e => { if (e.target === dlg) dlg.close(); });
+$('cancelBtn').onclick = () => dlg.close();
+$('deleteBtn').onclick = () => {
+  const c = byId(editingId);
+  if (!c || !confirm('確定刪除「' + c.title + '」？')) return;
+  cards = cards.filter(x => x.id !== c.id);
+  dlg.close();
+  render();
+  persist(() => api.remove(c.id));
+};
+
+/* ---------- 讀取／封存／選單 ---------- */
+function refresh(manual) {
+  if (!token || (!isDemo && !apiUrl)) return showLogin();
+  if (pending) return;
+  setSync('saving', '讀取中…');
+  api.list().then(list => {
+    cards = list; render(); idleSync();
+    if (manual) showToast('已更新');
+  }).catch(err => {
+    if (errCode(err) === 'AUTH_REQUIRED') return showLogin('請重新輸入 PIN 碼');
+    setSync('error', '讀取失敗'); console.error(err);
+  });
+}
+
+/* ---------- PIN 碼解鎖 ---------- */
+function errCode(err) {
+  const m = String((err && err.message) || err || '');
+  return ['AUTH_REQUIRED', 'BAD_PIN', 'LOCKED', 'NO_PIN', 'NETWORK'].find(c => m.indexOf(c) >= 0) || '';
+}
+
+function showLogin(msg, isErr) {
+  token = null;
+  try { localStorage.removeItem('kanban-token'); } catch (e) {}
+  cards = []; render();
+  if (dlg.open) dlg.close();
+  $('lockMsg').textContent = msg || '請輸入 PIN 碼';
+  $('lockMsg').classList.toggle('err', !!isErr);
+  $('lockHint').textContent = isDemo ? '示範模式的 PIN 碼是 1234' : '';
+  showApiField(!isDemo && !apiUrl);
+  $('lock').classList.add('open');
+  $('pinInput').value = '';
+  setTimeout(() => (isDemo || apiUrl ? $('pinInput') : $('apiInput')).focus(), 50);
+}
+
+function showApiField(show) {
+  $('apiInput').hidden = !show;
+  $('changeApi').hidden = show || isDemo;
+  if (show) $('apiInput').value = apiUrl;
+}
+$('changeApi').onclick = () => { showApiField(true); $('apiInput').focus(); };
+
+$('lockForm').addEventListener('submit', e => {
+  e.preventDefault();
+  const pin = $('pinInput').value.trim();
+  if (!isDemo && !$('apiInput').hidden) {
+    const u = normalizeApi($('apiInput').value);
+    if (!u) {
+      $('lockMsg').textContent = '網址格式不對：請貼上部署後拿到、結尾是 /exec 的網址';
+      $('lockMsg').classList.add('err');
+      return;
+    }
+    apiUrl = u;
+    try { localStorage.setItem('kanban-api', u); } catch (e) {}
+  }
+  if (!pin) return $('pinInput').focus();
+  $('lockMsg').textContent = '驗證中…';
+  $('lockMsg').classList.remove('err');
+  api.login(pin).then(t => {
+    token = t;
+    try { localStorage.setItem('kanban-token', t); } catch (e) {}
+    $('lock').classList.remove('open');
+    $('pinInput').blur();
+    showApiField(false);
+    refresh();
+  }).catch(err => {
+    const msgs = {
+      BAD_PIN: 'PIN 碼錯誤，請再試一次',
+      LOCKED: '錯誤次數太多，請 10 分鐘後再試',
+      NO_PIN: '尚未設定 PIN 碼：請打開試算表，從選單「任務看板 → 設定／變更 PIN 碼」設定',
+      NETWORK: '連不上資料窗口：請確認網址正確，且部署的存取權是「任何人」'
+    };
+    if (errCode(err) === 'NETWORK') showApiField(true);
+    $('lockMsg').textContent = msgs[errCode(err)] || '無法連線，請稍後再試';
+    $('lockMsg').classList.add('err');
+    $('pinInput').value = '';
+    const box = $('lockForm');
+    box.classList.remove('shake'); void box.offsetWidth; box.classList.add('shake');
+  });
+});
+
+function logout() {
+  if (!confirm('登出後，這台裝置需要重新輸入 PIN 碼。確定登出？')) return;
+  showLogin('已登出');
+}
+
+function archive() {
+  const n = cards.filter(c => c.status === '完成').length;
+  if (!n) return showToast('目前沒有已完成的卡片');
+  if (!confirm('把 ' + n + ' 張已完成的卡片移到「封存」工作表？')) return;
+  persist(() => api.archive()).then(list => {
+    if (list) { cards = list; render(); showToast('已封存 ' + n + ' 張卡片'); }
+  });
+}
+
+$('refreshBtn').onclick = () => refresh(true);
+$('archiveBtn').onclick = archive;
+$('menuBtn').onclick = (e) => { e.stopPropagation(); $('menu').classList.toggle('open'); };
+$('mRefresh').onclick = () => { $('menu').classList.remove('open'); refresh(true); };
+$('mArchive').onclick = () => { $('menu').classList.remove('open'); archive(); };
+$('mLogout').onclick = () => { $('menu').classList.remove('open'); logout(); };
+$('logoutBtn').onclick = logout;
+document.addEventListener('click', e => { if (!e.target.closest('#menu')) $('menu').classList.remove('open'); });
+
+$('composer').addEventListener('submit', e => {
+  e.preventDefault();
+  if (addCard(activeTab, $('composerInput').value)) $('composerInput').value = '';
+});
+
+/* 切回這個分頁時，自動抓試算表上的最新資料 */
+document.addEventListener('visibilitychange', () => { if (!document.hidden) refresh(); });
+
+buildBoard();
+try { const t = localStorage.getItem('kanban-tab'); if (STATUSES.indexOf(t) >= 0) activeTab = t; } catch (e) {}
+setTab(activeTab);
+try { const k = localStorage.getItem('kanban-color'); if (COLORS.some(c => c[0] === k)) setNewColor(k); } catch (e) {}
+refresh();
+</script>
+</body>
+</html>
