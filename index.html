@@ -10,8 +10,8 @@
 <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
 <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
-<meta name="theme-color" content="#f4f5f7" media="(prefers-color-scheme: light)">
-<meta name="theme-color" content="#1d2125" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#f4f5f7">
+<meta name="color-scheme" content="only light">
 <title>我的任務看板</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Sortable/1.15.2/Sortable.min.js"></script>
 <style>
@@ -23,20 +23,11 @@
     /* 卡片淺色系 */
     --c-yellow: #fff6cc; --c-green: #dcf7e8; --c-blue: #e3efff; --c-pink: #ffe6f2;
     --c-purple: #efe9ff; --c-orange: #ffecdc; --c-gray: #eceef1;
-  }
-  @media (prefers-color-scheme: dark) {
-    :root {
-      --bg: #1d2125; --col: #101214; --card: #22272b; --text: #dee4ea; --muted: #9fadbc;
-      --accent: #579dff; --danger: #f87168; --warn: #f5cd47; --ok: #4bce97; --border: #2c333a;
-      --bar: rgba(29,33,37,.92);
-      --shadow: 0 1px 1px rgba(0,0,0,.5);
-      --c-yellow: #3f3618; --c-green: #1d3a2c; --c-blue: #1e2f48; --c-pink: #43243a;
-      --c-purple: #2f2a4a; --c-orange: #43301e; --c-gray: #30363d;
-    }
+    color-scheme: only light;   /* 固定淺色：手機切到深色模式也不會變暗 */
   }
   * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
   body { margin: 0; background: var(--bg); color: var(--text);
-    font: 15px/1.45 -apple-system, BlinkMacSystemFont, "PingFang TC", "Noto Sans TC", "Microsoft JhengHei", sans-serif; }
+    font: 18px/1.45 -apple-system, BlinkMacSystemFont, "PingFang TC", "Noto Sans TC", "Microsoft JhengHei", sans-serif; }
   button { font: inherit; cursor: pointer; border: 1px solid var(--border); background: var(--card);
     color: var(--text); border-radius: 6px; padding: 6px 10px; }
   button:hover { border-color: var(--accent); }
@@ -45,20 +36,20 @@
 
   /* ---------- 頂部 ---------- */
   .top { display: flex; align-items: center; gap: 10px; padding: 12px 16px; position: relative; }
-  .top h1 { font-size: 18px; margin: 0; flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .who { font-size: 13px; font-weight: 600; color: var(--accent); background: color-mix(in srgb, var(--accent) 12%, transparent);
+  .top h1 { font-size: 22px; margin: 0; flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .who { font-size: 16px; font-weight: 600; color: var(--accent); background: color-mix(in srgb, var(--accent) 12%, transparent);
     border-radius: 999px; padding: 2px 10px; vertical-align: 3px; margin-left: 4px; }
   .who:empty { display: none; }
-  .sync { font-size: 13px; color: var(--muted); display: flex; align-items: center; gap: 6px; }
+  .sync { font-size: 16px; color: var(--muted); display: flex; align-items: center; gap: 6px; }
   .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--ok); flex: none; }
   .sync.saving .dot { background: var(--warn); }
   .sync.error .dot { background: var(--danger); }
   .sync.demo .dot { background: var(--muted); }
   .sync.offline .dot { background: var(--muted); box-shadow: 0 0 0 2px color-mix(in srgb, var(--warn) 45%, transparent); }
-  .netbar { flex: none; text-align: center; font-size: 13px; padding: 6px 12px; margin: 0 16px 10px; border-radius: 8px;
+  .netbar { flex: none; text-align: center; font-size: 16px; padding: 6px 12px; margin: 0 16px 10px; border-radius: 8px;
     color: var(--text); background: color-mix(in srgb, var(--warn) 16%, var(--bg)); }
   .netbar[hidden] { display: none; }
-  .menuBtn { display: none; border: none; background: transparent; font-size: 20px; line-height: 1; padding: 4px 8px; }
+  .menuBtn { display: none; border: none; background: transparent; font-size: 24px; line-height: 1; padding: 4px 8px; }
   .menu { position: absolute; right: 12px; top: 48px; background: var(--card); border-radius: 12px; z-index: 20;
     box-shadow: 0 8px 30px rgba(0,0,0,.25); padding: 6px; display: none; min-width: 170px; }
   .menu.open { display: block; }
@@ -72,8 +63,8 @@
   .col { background: var(--col); border-radius: 12px; padding: 10px; display: flex; flex-direction: column;
     max-height: calc(100vh - 80px); }
   .col header { display: flex; align-items: center; justify-content: space-between; padding: 2px 4px 8px; }
-  .col h2 { font-size: 15px; margin: 0; }
-  .count { font-size: 12px; color: var(--muted); background: var(--card); border-radius: 10px; padding: 1px 8px; }
+  .col h2 { font-size: 18px; margin: 0; }
+  .count { font-size: 14px; color: var(--muted); background: var(--card); border-radius: 10px; padding: 1px 8px; }
   .list { min-height: 40px; overflow-y: auto; overflow-x: hidden; display: flex; flex-direction: column; gap: 8px; padding: 2px; }
 
   /* ---------- 卡片 ---------- */
@@ -84,10 +75,10 @@
   .card .body { flex: 1; min-width: 0; }
   .card .t { word-break: break-word; }
   .col[data-status="完成"] .card .t { text-decoration: line-through; color: var(--muted); }
-  .lbl { display: inline-block; font-size: 11px; font-weight: 600; letter-spacing: .3px;
+  .lbl { display: inline-block; font-size: 13px; font-weight: 600; letter-spacing: .3px;
     color: var(--accent); background: color-mix(in srgb, var(--accent) 14%, transparent);
     border-radius: 4px; padding: 0 6px; margin-bottom: 4px; font-variant-numeric: tabular-nums; }
-  .meta { display: flex; gap: 8px; margin-top: 6px; font-size: 12px; color: var(--muted); flex-wrap: wrap; }
+  .meta { display: flex; gap: 8px; margin-top: 6px; font-size: 14px; color: var(--muted); flex-wrap: wrap; }
   .meta:empty { display: none; }
   .due.overdue { color: var(--danger); font-weight: 600; }
   .due.today { color: var(--warn); font-weight: 600; }
@@ -131,7 +122,7 @@
   /* 左滑提示 */
   .card.swiping { transition: none; }
   .card.swiping::after { content: attr(data-hint); position: absolute; left: calc(100% + 14px); top: 50%;
-    transform: translateY(-50%); white-space: nowrap; font-size: 13px; color: var(--muted); }
+    transform: translateY(-50%); white-space: nowrap; font-size: 16px; color: var(--muted); }
   .card.armed { background: color-mix(in srgb, var(--accent) 12%, var(--card)); }
   .card.armed::after { color: var(--accent); font-weight: 600; }
 
@@ -149,7 +140,7 @@
   dialog::backdrop { background: rgba(9,30,66,.45); }
   dialog form { padding: 18px; display: flex; flex-direction: column; gap: 12px; }
   .grip { display: none; }
-  dialog label { font-size: 13px; color: var(--muted); display: flex; flex-direction: column; gap: 4px; }
+  dialog label { font-size: 16px; color: var(--muted); display: flex; flex-direction: column; gap: 4px; }
   dialog input, dialog textarea, dialog select { font: inherit; padding: 8px 10px; border-radius: 6px;
     border: 1px solid var(--border); background: var(--bg); color: var(--text); }
   dialog textarea { min-height: 90px; resize: vertical; }
@@ -159,25 +150,25 @@
   .row > * { flex: 1; }
   .actions { display: flex; gap: 8px; justify-content: flex-end; }
   .actions .danger { margin-right: auto; }
-  .stamp { font-size: 12px; color: var(--muted); }
+  .stamp { font-size: 14px; color: var(--muted); }
 
   /* ---------- PIN 碼解鎖畫面 ---------- */
   .lock { position: fixed; inset: 0; z-index: 50; background: var(--bg); display: none; padding: 24px; }
   .lock.open { display: flex; align-items: center; justify-content: center; }
   .lockBox { width: 100%; max-width: 300px; text-align: center; display: flex; flex-direction: column; gap: 14px; }
-  .lockBox .ic { font-size: 40px; }
-  .lockBox h2 { margin: 0; font-size: 20px; }
-  .lockBox p { margin: 0; color: var(--muted); font-size: 14px; min-height: 20px; }
+  .lockBox .ic { font-size: 48px; }
+  .lockBox h2 { margin: 0; font-size: 24px; }
+  .lockBox p { margin: 0; color: var(--muted); font-size: 17px; min-height: 20px; }
   .lockBox p.err { color: var(--danger); }
-  .lockBox input { width: 100%; min-width: 0; font: inherit; font-size: 26px; letter-spacing: 10px; text-align: center; padding: 12px;
+  .lockBox input { width: 100%; min-width: 0; font: inherit; font-size: 31px; letter-spacing: 10px; text-align: center; padding: 12px;
     border-radius: 12px; border: 1px solid var(--border); background: var(--card); color: var(--text); }
   .lockBox input:focus { outline: none; border-color: var(--accent); }
-  .lockBox button { padding: 12px; font-size: 16px; border-radius: 12px; }
-  .lockBox .hint { font-size: 12px; }
-  .lockBox .userInput { font-size: 18px; letter-spacing: 0; }
-  .lockBox .apiInput { font-size: 14px; letter-spacing: 0; text-align: left; padding: 12px; }
-  .lockBox input::placeholder { letter-spacing: 0; font-size: 15px; }
-  .linkBtn { border: none; background: transparent; color: var(--accent); font-size: 13px; padding: 2px; }
+  .lockBox button { padding: 12px; font-size: 19px; border-radius: 12px; }
+  .lockBox .hint { font-size: 14px; }
+  .lockBox .userInput { font-size: 22px; letter-spacing: 0; }
+  .lockBox .apiInput { font-size: 17px; letter-spacing: 0; text-align: left; padding: 12px; }
+  .lockBox input::placeholder { letter-spacing: 0; font-size: 18px; }
+  .linkBtn { border: none; background: transparent; color: var(--accent); font-size: 16px; padding: 2px; }
   .lockBox .apiInput[hidden], .linkBtn[hidden] { display: none; }
   .shake { animation: shake .35s; }
   @keyframes shake { 20%, 60% { transform: translateX(-8px); } 40%, 80% { transform: translateX(8px); } }
@@ -185,7 +176,7 @@
   /* ---------- 提示訊息 ---------- */
   .toast { position: fixed; left: 50%; bottom: 24px; transform: translate(-50%, 20px); opacity: 0; pointer-events: none;
     background: #172b4d; color: #fff; border-radius: 10px; padding: 10px 14px; display: flex; gap: 14px;
-    align-items: center; font-size: 14px; transition: .2s; z-index: 30; max-width: calc(100vw - 32px); }
+    align-items: center; font-size: 17px; transition: .2s; z-index: 30; max-width: calc(100vw - 32px); }
   .toast.show { opacity: 1; transform: translate(-50%, 0); pointer-events: auto; }
   .toast button { border: none; background: transparent; color: #85b8ff; font-weight: 600; padding: 0; }
 
@@ -196,12 +187,12 @@
     html, body { height: 100%; }
     body { display: flex; flex-direction: column; overflow: hidden; overscroll-behavior: none; }
     .top { padding: calc(10px + env(safe-area-inset-top)) 12px 8px 16px; }
-    .top h1 { font-size: 20px; }
+    .top h1 { font-size: 24px; }
     .desk, .sync #syncText { display: none; }
     .menuBtn { display: block; }
 
     .board { flex: 1; min-height: 0; display: flex; flex-direction: column; align-items: stretch; padding: 0; gap: 0; }
-    .ptr { display: block; height: 0; overflow: hidden; text-align: center; font-size: 13px; color: var(--muted);
+    .ptr { display: block; height: 0; overflow: hidden; text-align: center; font-size: 16px; color: var(--muted);
       line-height: 40px; transition: height .2s; flex: none; }
     .ptr.pulling { transition: none; }
     .col { display: none; background: transparent; border-radius: 0; padding: 0; max-height: none; }
@@ -209,7 +200,7 @@
     .col header, .col .add { display: none; }
     .list { flex: 1; padding: 6px 16px 16px; gap: 8px; -webkit-overflow-scrolling: touch; }
     .list:empty::before { content: '這裡還沒有卡片'; color: var(--muted); text-align: center; padding: 48px 0; }
-    .card { padding: 12px 14px; font-size: 16px; border-radius: 10px; touch-action: pan-y; }
+    .card { padding: 12px 14px; font-size: 19px; border-radius: 10px; touch-action: pan-y; }
     .card:hover { outline: none; }
     .chk { width: 24px; height: 24px; }
 
@@ -217,21 +208,21 @@
       border-top: 1px solid var(--border); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); }
     .composer { align-items: center; }
     .composer .swBtn { width: 32px; height: 32px; }
-    .composer input { flex: 1; min-width: 0; font-size: 16px; padding: 10px 14px; border-radius: 20px;
+    .composer input { flex: 1; min-width: 0; font-size: 19px; padding: 10px 14px; border-radius: 20px;
       border: 1px solid var(--border); background: var(--card); color: var(--text); }
     .composer input:focus { outline: none; border-color: var(--accent); }
     .composer button[type="submit"] { width: 42px; height: 42px; border-radius: 50%; border: none; background: var(--accent);
-      color: #fff; font-size: 22px; padding: 0; flex: none; }
+      color: #fff; font-size: 26px; padding: 0; flex: none; }
 
     .tabs { display: flex; background: var(--bar); border-top: 1px solid var(--border);
       padding-bottom: env(safe-area-inset-bottom); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); }
     .tab { flex: 1; border: none; background: transparent; border-radius: 0; padding: 8px 4px 6px;
-      display: flex; flex-direction: column; align-items: center; gap: 2px; font-size: 11px; color: var(--muted); position: relative; }
+      display: flex; flex-direction: column; align-items: center; gap: 2px; font-size: 13px; color: var(--muted); position: relative; }
     .tab svg { width: 24px; height: 24px; fill: none; stroke: currentColor; stroke-width: 1.8;
       stroke-linecap: round; stroke-linejoin: round; }
     .tab.on { color: var(--accent); font-weight: 600; }
-    .tab .tc { position: absolute; top: 4px; left: calc(50% + 8px); min-width: 18px; height: 18px; border-radius: 9px;
-      background: var(--accent); color: #fff; font-size: 11px; line-height: 18px; padding: 0 5px; font-weight: 600; }
+    .tab .tc { position: absolute; top: 4px; left: calc(50% + 8px); min-width: 21px; height: 21px; border-radius: 11px;
+      background: var(--accent); color: #fff; font-size: 13px; line-height: 21px; padding: 0 6px; font-weight: 600; }
     .tab .tc:empty, .tab .tc[data-zero] { display: none; }
 
     dialog { width: 100%; max-width: 100%; margin: auto 0 0; border-radius: 18px 18px 0 0;
@@ -240,7 +231,7 @@
     @keyframes sheet { from { transform: translateY(100%); } }
     dialog form { padding: 10px 18px 18px; }
     .grip { display: block; width: 40px; height: 5px; border-radius: 3px; background: var(--border); margin: 0 auto 4px; }
-    dialog input, dialog textarea, dialog select { font-size: 16px; padding: 10px 12px; }
+    dialog input, dialog textarea, dialog select { font-size: 19px; padding: 10px 12px; }
     .actions button { padding: 10px 14px; }
 
     .toast { bottom: calc(130px + env(safe-area-inset-bottom)); }
