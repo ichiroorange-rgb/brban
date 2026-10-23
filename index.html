@@ -53,6 +53,7 @@
   .menu { position: absolute; right: 12px; top: 48px; background: var(--card); border-radius: 12px; z-index: 20;
     box-shadow: 0 8px 30px rgba(0,0,0,.25); padding: 6px; display: none; min-width: 170px; }
   .menu.open { display: block; }
+  .menu .ver { font-size: 13px; color: var(--muted); padding: 8px 12px 4px; border-top: 1px solid var(--border); margin-top: 4px; }
   .menu button { display: block; width: 100%; text-align: left; border: none; background: transparent; padding: 10px 12px; border-radius: 8px; }
   .menu button:active { background: var(--col); }
 
@@ -250,6 +251,7 @@
       <button id="mRefresh">重新整理</button>
       <button id="mArchive">封存已完成</button>
       <button id="mLogout">登出這台裝置</button>
+      <div class="ver" id="ver"></div>
     </div>
   </div>
 
@@ -304,6 +306,7 @@
   <div class="toast" id="toast"><span id="toastText"></span><button id="toastUndo">復原</button></div>
 
 <script>
+const APP_VERSION = '2026-10-23b';   // 每次更新畫面時改這個號碼
 const STATUSES = ['待辦', '完成', '資訊儲藏區'];
 const ICONS = {
   '待辦': '<svg viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="4"/><path d="M8 9.5h8M8 14.5h5"/></svg>',
@@ -1035,6 +1038,7 @@ $('composer').addEventListener('submit', e => {
 document.addEventListener('visibilitychange', () => { if (!document.hidden) refresh(); });
 
 buildBoard();
+$('ver').textContent = '版本 ' + APP_VERSION;
 try { const t = localStorage.getItem('kanban-tab'); if (STATUSES.indexOf(t) >= 0) activeTab = t; } catch (e) {}
 setTab(activeTab);
 if (token) {

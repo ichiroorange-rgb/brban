@@ -2,7 +2,7 @@
  * - App 畫面：先連網取得最新版，沒網路時用快取（所以更新 GitHub 上的檔案後會自動生效）
  * - 資料（script.google.com）：完全不經過快取，永遠直接連線
  */
-const CACHE = 'kanban-v5';
+const CACHE = 'kanban-v6';
 const SHELL = [
   './',
   './index.html',
@@ -48,9 +48,10 @@ self.addEventListener('fetch', (e) => {
 
   if (url.origin !== self.location.origin) return;
 
-  // 自己網站的檔案：先連網，失敗才用快取
+  // 自己網站的檔案：先連網，失敗才用快取。
+  // cache: 'no-cache' 讓瀏覽器每次都向 GitHub 確認是不是最新版，不會拿到暫存約 10 分鐘的舊檔。
   e.respondWith(
-    fetch(req).then((res) => {
+    fetch(req.url, { cache: 'no-cache', credentials: 'same-origin' }).then((res) => {
       if (res.ok) {
         const copy = res.clone();
         caches.open(CACHE).then((c) => c.put(req, copy));
