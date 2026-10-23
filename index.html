@@ -6,6 +6,9 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="任務看板">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="theme-color" content="#f4f5f7" media="(prefers-color-scheme: light)">
 <meta name="theme-color" content="#1d2125" media="(prefers-color-scheme: dark)">
@@ -42,7 +45,10 @@
 
   /* ---------- 頂部 ---------- */
   .top { display: flex; align-items: center; gap: 10px; padding: 12px 16px; position: relative; }
-  .top h1 { font-size: 18px; margin: 0; flex: 1; }
+  .top h1 { font-size: 18px; margin: 0; flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .who { font-size: 13px; font-weight: 600; color: var(--accent); background: color-mix(in srgb, var(--accent) 12%, transparent);
+    border-radius: 999px; padding: 2px 10px; vertical-align: 3px; margin-left: 4px; }
+  .who:empty { display: none; }
   .sync { font-size: 13px; color: var(--muted); display: flex; align-items: center; gap: 6px; }
   .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--ok); flex: none; }
   .sync.saving .dot { background: var(--warn); }
@@ -164,6 +170,7 @@
   .lockBox input:focus { outline: none; border-color: var(--accent); }
   .lockBox button { padding: 12px; font-size: 16px; border-radius: 12px; }
   .lockBox .hint { font-size: 12px; }
+  .lockBox .userInput { font-size: 18px; letter-spacing: 0; }
   .lockBox .apiInput { font-size: 14px; letter-spacing: 0; text-align: left; padding: 12px; }
   .lockBox input::placeholder { letter-spacing: 0; font-size: 15px; }
   .linkBtn { border: none; background: transparent; color: var(--accent); font-size: 13px; padding: 2px; }
@@ -238,11 +245,11 @@
 </head>
 <body>
   <div class="top">
-    <h1>我的任務看板</h1>
+    <h1>我的任務看板 <span class="who" id="who"></span></h1>
     <span class="sync" id="sync"><span class="dot"></span><span id="syncText">載入中…</span></span>
     <button class="desk" id="refreshBtn" title="從試算表重新讀取">重新整理</button>
     <button class="desk" id="archiveBtn" title="把完成的卡片移到「封存」工作表">封存已完成</button>
-    <button class="desk" id="logoutBtn" title="這台裝置需要重新輸入 PIN 碼">登出</button>
+    <button class="desk" id="logoutBtn" title="登出後需要重新輸入帳號和 PIN 碼">登出</button>
     <button class="menuBtn" id="menuBtn" aria-label="更多">⋯</button>
     <div class="menu" id="menu">
       <button id="mRefresh">重新整理</button>
@@ -288,6 +295,8 @@
       <p id="lockMsg">請輸入 PIN 碼</p>
       <input id="apiInput" class="apiInput" type="url" inputmode="url" placeholder="貼上 Apps Script 網址（…/exec）"
         aria-label="Apps Script 網址" spellcheck="false" autocapitalize="off">
+      <input id="userInput" class="userInput" type="text" placeholder="帳號" aria-label="帳號"
+        autocomplete="username" autocapitalize="off" spellcheck="false" maxlength="20">
       <input id="pinInput" type="password" inputmode="numeric" pattern="[0-9]*" maxlength="12" aria-label="PIN 碼" placeholder="PIN 碼">
       <button type="submit" class="primary">解鎖</button>
       <button type="button" class="linkBtn" id="changeApi">變更 Apps Script 網址</button>
@@ -319,7 +328,8 @@ let activeTab = '待辦';
 let dragging = false;
 let swipedAt = 0;
 let token = null;
-try { token = localStorage.getItem('kanban-token'); } catch (e) {}
+let userName = '';
+try { token = localStorage.getItem('kanban-token'); userName = localStorage.getItem('kanban-user') || ''; } catch (e) {}
 const mobile = window.matchMedia('(max-width: 760px)');
 const $ = (id) => document.getElementById(id);
 
@@ -349,7 +359,7 @@ function httpApi() {
     return data;
   };
   return {
-    login: (pin) => call('login', { pin }).then(d => d.token),
+    login: (user, pin) => call('login', { user, pin }).then(d => ({ token: d.token, user: d.user })),
     list: () => call('list').then(d => d.cards),
     save: (list) => call('save', { cards: list }),
     remove: (id) => call('delete', { id }),
@@ -386,8 +396,8 @@ function demoApi() {
   const store = (list) => { mem = list; try { localStorage.setItem(KEY, JSON.stringify(list)); } catch (e) {} };
   const wait = (v) => new Promise(r => setTimeout(() => r(v), 150));
   return {
-    login: (pin) => pin === '1234' ? wait('demo-token')
-      : new Promise((r, rej) => setTimeout(() => rej(new Error('BAD_PIN')), 300)),
+    login: (user, pin) => pin === '1234' ? wait({ token: 'demo-token', user: user || '示範' })
+      : new Promise((r, rej) => setTimeout(() => rej(new Error('BAD_LOGIN')), 300)),
     list: () => wait(JSON.parse(JSON.stringify(load()))),
     save: (list) => { const all = load(); const labels = {}; list.forEach(c => {
         const i = all.findIndex(x => x.id === c.id);
@@ -425,7 +435,7 @@ function persist(promiseFn) {
     return r;
   }).catch(err => {
     pending--;
-    if (errCode(err) === 'AUTH_REQUIRED') return showLogin('請重新輸入 PIN 碼');
+    if (errCode(err) === 'AUTH_REQUIRED') return showLogin('登入已失效，請重新登入');
     setSync('error', '同步失敗，請重新整理');
     showToast('同步失敗，請重新整理');
     console.error(err);
@@ -761,7 +771,7 @@ function refresh(manual) {
     cards = list; render(); idleSync();
     if (manual) showToast('已更新');
   }).catch(err => {
-    if (errCode(err) === 'AUTH_REQUIRED') return showLogin('請重新輸入 PIN 碼');
+    if (errCode(err) === 'AUTH_REQUIRED') return showLogin('登入已失效，請重新登入');
     setSync('error', '讀取失敗'); console.error(err);
   });
 }
@@ -769,7 +779,7 @@ function refresh(manual) {
 /* ---------- PIN 碼解鎖 ---------- */
 function errCode(err) {
   const m = String((err && err.message) || err || '');
-  return ['AUTH_REQUIRED', 'BAD_PIN', 'LOCKED', 'NO_PIN', 'NETWORK'].find(c => m.indexOf(c) >= 0) || '';
+  return ['AUTH_REQUIRED', 'BAD_LOGIN', 'LOCKED', 'DISABLED', 'NO_USERS', 'NETWORK'].find(c => m.indexOf(c) >= 0) || '';
 }
 
 function showLogin(msg, isErr) {
@@ -777,13 +787,15 @@ function showLogin(msg, isErr) {
   try { localStorage.removeItem('kanban-token'); } catch (e) {}
   cards = []; render();
   if (dlg.open) dlg.close();
-  $('lockMsg').textContent = msg || '請輸入 PIN 碼';
+  $('who').textContent = '';
+  $('lockMsg').textContent = msg || '請輸入帳號和 PIN 碼';
   $('lockMsg').classList.toggle('err', !!isErr);
-  $('lockHint').textContent = isDemo ? '示範模式的 PIN 碼是 1234' : '';
+  $('lockHint').textContent = isDemo ? '示範模式：任意帳號，PIN 碼 1234' : '';
   showApiField(!isDemo && !apiUrl);
   $('lock').classList.add('open');
+  $('userInput').value = userName;
   $('pinInput').value = '';
-  setTimeout(() => (isDemo || apiUrl ? $('pinInput') : $('apiInput')).focus(), 50);
+  setTimeout(() => (!isDemo && !apiUrl ? $('apiInput') : userName ? $('pinInput') : $('userInput')).focus(), 50);
 }
 
 function showApiField(show) {
@@ -796,6 +808,7 @@ $('changeApi').onclick = () => { showApiField(true); $('apiInput').focus(); };
 $('lockForm').addEventListener('submit', e => {
   e.preventDefault();
   const pin = $('pinInput').value.trim();
+  const user = $('userInput').value.trim();
   if (!isDemo && !$('apiInput').hidden) {
     const u = normalizeApi($('apiInput').value);
     if (!u) {
@@ -806,21 +819,25 @@ $('lockForm').addEventListener('submit', e => {
     apiUrl = u;
     try { localStorage.setItem('kanban-api', u); } catch (e) {}
   }
+  if (!user) return $('userInput').focus();
   if (!pin) return $('pinInput').focus();
   $('lockMsg').textContent = '驗證中…';
   $('lockMsg').classList.remove('err');
-  api.login(pin).then(t => {
-    token = t;
-    try { localStorage.setItem('kanban-token', t); } catch (e) {}
+  api.login(user, pin).then(r => {
+    token = r.token;
+    userName = r.user;
+    try { localStorage.setItem('kanban-token', r.token); localStorage.setItem('kanban-user', r.user); } catch (e) {}
+    $('who').textContent = userName;
     $('lock').classList.remove('open');
     $('pinInput').blur();
     showApiField(false);
     refresh();
   }).catch(err => {
     const msgs = {
-      BAD_PIN: 'PIN 碼錯誤，請再試一次',
-      LOCKED: '錯誤次數太多，請 10 分鐘後再試',
-      NO_PIN: '尚未設定 PIN 碼：請打開試算表，從選單「任務看板 → 設定／變更 PIN 碼」設定',
+      BAD_LOGIN: '帳號或 PIN 碼錯誤，請再試一次',
+      LOCKED: '這個帳號錯誤次數太多，請 10 分鐘後再試',
+      DISABLED: '這個帳號已被停用，請聯絡管理者',
+      NO_USERS: '尚未建立成員：請在試算表選單「任務看板 → 新增成員」建立帳號',
       NETWORK: '連不上資料窗口：請確認網址正確，且部署的存取權是「任何人」'
     };
     if (errCode(err) === 'NETWORK') showApiField(true);
@@ -833,7 +850,7 @@ $('lockForm').addEventListener('submit', e => {
 });
 
 function logout() {
-  if (!confirm('登出後，這台裝置需要重新輸入 PIN 碼。確定登出？')) return;
+  if (!confirm('登出後，這台裝置需要重新輸入帳號和 PIN 碼。確定登出？')) return;
   showLogin('已登出');
 }
 
@@ -866,8 +883,14 @@ document.addEventListener('visibilitychange', () => { if (!document.hidden) refr
 buildBoard();
 try { const t = localStorage.getItem('kanban-tab'); if (STATUSES.indexOf(t) >= 0) activeTab = t; } catch (e) {}
 setTab(activeTab);
+if (token) $('who').textContent = userName;
 try { const k = localStorage.getItem('kanban-color'); if (COLORS.some(c => c[0] === k)) setNewColor(k); } catch (e) {}
 refresh();
+
+/* ---------- PWA：註冊 service worker（讓 App 可安裝、可用 PWABuilder 打包） ---------- */
+if ('serviceWorker' in navigator && location.protocol === 'https:') {
+  window.addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(() => {}));
+}
 </script>
 </body>
 </html>
