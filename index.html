@@ -54,6 +54,10 @@
   .sync.saving .dot { background: var(--warn); }
   .sync.error .dot { background: var(--danger); }
   .sync.demo .dot { background: var(--muted); }
+  .sync.offline .dot { background: var(--muted); box-shadow: 0 0 0 2px color-mix(in srgb, var(--warn) 45%, transparent); }
+  .netbar { flex: none; text-align: center; font-size: 13px; padding: 6px 12px; margin: 0 16px 10px; border-radius: 8px;
+    color: var(--text); background: color-mix(in srgb, var(--warn) 16%, var(--bg)); }
+  .netbar[hidden] { display: none; }
   .menuBtn { display: none; border: none; background: transparent; font-size: 20px; line-height: 1; padding: 4px 8px; }
   .menu { position: absolute; right: 12px; top: 48px; background: var(--card); border-radius: 12px; z-index: 20;
     box-shadow: 0 8px 30px rgba(0,0,0,.25); padding: 6px; display: none; min-width: 170px; }
@@ -258,6 +262,8 @@
     </div>
   </div>
 
+  <div class="netbar" id="netbar" hidden></div>
+
   <main class="board" id="board"></main>
 
   <form class="composer" id="composer">
@@ -322,7 +328,6 @@ const swatches = (cur) => COLORS.map(([k, n]) =>
   `<button type="button" class="sw${k === cur ? ' on' : ''}" data-color="${k}" title="${n}" aria-label="${n}"></button>`).join('');
 const CHECK = '<svg viewBox="0 0 24 24"><path d="M6.5 12.5l3.5 3.5 7.5-8"/></svg>';
 let cards = [];
-let pending = 0;
 let editingId = null;
 let activeTab = '待辦';
 let dragging = false;
@@ -425,22 +430,147 @@ function setSync(state, text) {
 }
 function idleSync() { setSync(isDemo ? 'demo' : '', isDemo ? '示範模式（未連接試算表）' : '已同步'); }
 
-function persist(promiseFn) {
-  pending++;
-  setSync('saving', '儲存中…');
-  return promiseFn().then(r => {
-    pending--;
-    if (r && r.labels) applyLabels(r.labels);
-    if (!pending) idleSync();
-    return r;
-  }).catch(err => {
-    pending--;
-    if (errCode(err) === 'AUTH_REQUIRED') return showLogin('登入已失效，請重新登入');
-    setSync('error', '同步失敗，請重新整理');
-    showToast('同步失敗，請重新整理');
-    console.error(err);
-  });
+/* =========================================================
+   離線支援
+   - 每次同步成功，自己的卡片會存一份在這台裝置上（沒網路也看得到）
+   - 所有修改先放進「待同步清單」，有網路就立刻送出；沒網路就等網路恢復自動補送
+   - 登出時清掉這台裝置上的資料
+   ========================================================= */
+const ckey = () => 'kanban-cache:' + (isDemo ? 'demo' : userName);
+const okey = () => 'kanban-outbox:' + (isDemo ? 'demo' : userName);
+let outbox = { saves: {}, deletes: [] };
+let offline = false, flushing = null, flushAgain = false, refreshing = false, retryTimer = null;
+let inflight = new Set();
+let lastSync = '';
+
+function lsGet(k) { try { return JSON.parse(localStorage.getItem(k)); } catch (e) { return null; } }
+function lsSet(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) {} }
+function lsDel(k) { try { localStorage.removeItem(k); } catch (e) {} }
+function nowText() { const d = new Date(); return (d.getMonth() + 1) + '/' + d.getDate() + ' ' + String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0'); }
+function pendingCount() { return Object.keys(outbox.saves).length + outbox.deletes.length; }
+function stripLocal(c) { const o = { ...c }; delete o._new; return o; }
+
+/** 讀回這位使用者存在裝置上的卡片與待同步清單 */
+function loadLocal() {
+  const o = lsGet(okey());
+  outbox = o && o.saves && Array.isArray(o.deletes) ? o : { saves: {}, deletes: [] };
+  const c = lsGet(ckey());
+  lastSync = (c && c.at) || '';
+  return c && Array.isArray(c.cards) ? c.cards : null;
 }
+
+function saveLocal(synced) {
+  if (!userName && !isDemo) return;
+  if (synced) lastSync = nowText();
+  lsSet(ckey(), { cards: cards, at: lastSync });
+  lsSet(okey(), outbox);
+}
+
+function clearLocal() {
+  lsDel(ckey()); lsDel(okey());
+  outbox = { saves: {}, deletes: [] };
+  lastSync = '';
+}
+
+/** 伺服器資料＋還沒送出的本機修改 */
+function overlay(list) {
+  const map = {};
+  list.forEach(c => { map[c.id] = c; });
+  Object.keys(outbox.saves).forEach(id => {
+    const prev = map[id];
+    map[id] = { ...(prev || {}), ...outbox.saves[id], label: (prev && prev.label) || outbox.saves[id].label };
+  });
+  outbox.deletes.forEach(id => { delete map[id]; });
+  return Object.values(map);
+}
+
+function queueSave(list) {
+  list.forEach(c => { outbox.saves[c.id] = { ...c }; });
+  saveLocal();
+  updateNet();
+  flush();
+}
+
+function queueDelete(id) {
+  const s = outbox.saves[id];
+  delete outbox.saves[id];
+  // 離線新增、還沒送出過就刪掉的卡片，伺服器根本不知道，直接丟掉即可
+  if (!(s && s._new && !inflight.has(id)) && outbox.deletes.indexOf(id) < 0) outbox.deletes.push(id);
+  saveLocal();
+  updateNet();
+  flush();
+}
+
+/** 把待同步清單送到試算表 */
+function flush() {
+  if (flushing) { flushAgain = true; return flushing; }
+  if (!token || !pendingCount()) return Promise.resolve();
+  const snap = {};
+  Object.keys(outbox.saves).forEach(id => { snap[id] = JSON.stringify(outbox.saves[id]); });
+  const list = Object.keys(snap).map(id => stripLocal(outbox.saves[id]));
+  const dels = outbox.deletes.slice();
+  inflight = new Set(Object.keys(snap));
+  updateNet('saving');
+  flushing = (list.length ? api.save(list) : Promise.resolve({}))
+    .then(r => {
+      if (r && r.labels) applyLabels(r.labels);
+      Object.keys(snap).forEach(id => {
+        const cur = outbox.saves[id];
+        if (cur && JSON.stringify(cur) === snap[id]) delete outbox.saves[id];
+        else if (cur) delete cur._new;          // 送出途中又改過：還要再送一次，但伺服器已經有這張卡了
+        const c = byId(id); if (c) delete c._new;
+      });
+      return dels.reduce((p, id) => p.then(() => api.remove(id)).then(() => {
+        outbox.deletes = outbox.deletes.filter(x => x !== id);
+      }), Promise.resolve());
+    })
+    .then(() => { offline = false; saveLocal(true); })
+    .catch(err => {
+      const code = errCode(err);
+      saveLocal();
+      if (code === 'AUTH_REQUIRED') return authExpired();
+      if (code === 'NETWORK') offline = true;
+      else console.error(err);
+      scheduleRetry();
+    })
+    .finally(() => {
+      flushing = null;
+      inflight = new Set();
+      updateNet();
+      if (flushAgain) { flushAgain = false; if (!offline && pendingCount()) flush(); }
+    });
+  return flushing;
+}
+
+function scheduleRetry() {
+  if (retryTimer) return;
+  retryTimer = setTimeout(() => { retryTimer = null; if (token) refresh(); }, 20000);
+}
+
+/** 更新右上角狀態與離線提示列 */
+function updateNet(state) {
+  const n = pendingCount();
+  if (isDemo) idleSync();
+  else if (state === 'saving') setSync('saving', '同步中…');
+  else if (offline) setSync('offline', n ? '離線中・' + n + ' 項待同步' : '離線中');
+  else if (n) setSync('saving', n + ' 項待同步');
+  else idleSync();
+  const bar = $('netbar');
+  if (offline && token) {
+    bar.textContent = '離線中' + (n ? '・' + n + ' 項變更待同步' : '') + (lastSync ? '・資料更新於 ' + lastSync : '');
+    bar.hidden = false;
+  } else {
+    bar.hidden = true;
+  }
+}
+
+/** 登入失效（例如被重設 PIN 碼）：保留本機資料，重新登入後自動補送 */
+function authExpired() {
+  showLogin(pendingCount() ? '登入已失效，請重新登入（尚未同步的變更會保留）' : '登入已失效，請重新登入');
+}
+
+window.addEventListener('online', () => { if (token) refresh(); });
+window.addEventListener('offline', () => { offline = true; updateNet(); });
 
 /* 伺服器配好標籤後，直接更新卡片上的標籤（不重畫整個看板，避免打斷拖曳） */
 function applyLabels(labels) {
@@ -548,12 +678,12 @@ function addCard(status, title) {
   title = (title || '').trim();
   if (!title) return false;
   const max = peers(status).reduce((m, c) => Math.max(m, c.order), -1);
-  const card = { id: newId(), title, note: '', status, order: max + 1, due: '', color: newColor };
+  const card = { id: newId(), title, note: '', status, order: max + 1, due: '', color: newColor, _new: true };
   cards.push(card);
   render();
   const list = document.querySelector('.col[data-status="' + status + '"] .list');
   list.scrollTop = list.scrollHeight;
-  persist(() => api.save([card]));
+  queueSave([card]);
   return true;
 }
 
@@ -564,11 +694,11 @@ function moveTo(c, status, toTop) {
                   : others.reduce((m, x) => Math.max(m, x.order), -1) + 1;
   c.status = status;
   render();
-  persist(() => api.save([{ ...c }]));
+  queueSave([c]);
   showToast('已移到「' + status + '」', () => {
     c.status = prev.status; c.order = prev.order;
     render();
-    persist(() => api.save([{ ...c }]));
+    queueSave([c]);
   });
 }
 
@@ -596,7 +726,7 @@ function syncFromDom() {
     });
   });
   render();
-  if (changed.length) persist(() => api.save(changed));
+  if (changed.length) queueSave(changed);
 }
 
 /* ---------- 手勢：卡片左滑 → 移到資訊儲藏區（在資訊儲藏區則移回待辦） ---------- */
@@ -705,7 +835,7 @@ form.addEventListener('submit', e => {
   c.color = on ? on.dataset.color : '';
   dlg.close();
   render();
-  persist(() => api.save([{ ...c }]));
+  queueSave([c]);
 });
 
 $('editColors').addEventListener('click', e => {
@@ -759,21 +889,37 @@ $('deleteBtn').onclick = () => {
   cards = cards.filter(x => x.id !== c.id);
   dlg.close();
   render();
-  persist(() => api.remove(c.id));
+  queueDelete(c.id);
 };
 
 /* ---------- 讀取／封存／選單 ---------- */
 function refresh(manual) {
   if (!token || (!isDemo && !apiUrl)) return showLogin();
-  if (pending) return;
-  setSync('saving', '讀取中…');
-  api.list().then(list => {
-    cards = list; render(); idleSync();
+  if (refreshing) return;
+  refreshing = true;
+  updateNet('saving');
+  flush().then(() => {
+    if (!token) throw new Error('AUTH_REQUIRED');
+    if (pendingCount()) throw new Error(offline ? 'NETWORK' : 'PENDING');   // 還有沒送出去的修改
+    return api.list();
+  }).then(list => {
+    cards = overlay(list);
+    render();
+    offline = false;
+    saveLocal(true);
     if (manual) showToast('已更新');
   }).catch(err => {
-    if (errCode(err) === 'AUTH_REQUIRED') return showLogin('登入已失效，請重新登入');
-    setSync('error', '讀取失敗'); console.error(err);
-  });
+    const code = errCode(err);
+    if (code === 'AUTH_REQUIRED') { if (token) authExpired(); return; }
+    if (code === 'NETWORK') {
+      offline = true;
+      if (manual) showToast('目前沒有網路，顯示上次同步的資料');
+    } else {
+      console.error(err);
+      if (manual) showToast('同步失敗，稍後會自動重試');
+    }
+    scheduleRetry();
+  }).finally(() => { refreshing = false; updateNet(); });
 }
 
 /* ---------- PIN 碼解鎖 ---------- */
@@ -831,6 +977,8 @@ $('lockForm').addEventListener('submit', e => {
     $('lock').classList.remove('open');
     $('pinInput').blur();
     showApiField(false);
+    const local = loadLocal();
+    if (local) { cards = local; render(); }
     refresh();
   }).catch(err => {
     const msgs = {
@@ -850,7 +998,12 @@ $('lockForm').addEventListener('submit', e => {
 });
 
 function logout() {
-  if (!confirm('登出後，這台裝置需要重新輸入帳號和 PIN 碼。確定登出？')) return;
+  const n = pendingCount();
+  const msg = n
+    ? '還有 ' + n + ' 項變更尚未同步到試算表，登出會遺失這些變更。\n建議連上網路、等同步完成後再登出。\n\n仍要登出嗎？'
+    : '登出後會清除這台裝置上的卡片資料，需要重新輸入帳號和 PIN 碼。確定登出？';
+  if (!confirm(msg)) return;
+  clearLocal();
   showLogin('已登出');
 }
 
@@ -858,9 +1011,19 @@ function archive() {
   const n = cards.filter(c => c.status === '完成').length;
   if (!n) return showToast('目前沒有已完成的卡片');
   if (!confirm('把 ' + n + ' 張已完成的卡片移到「封存」工作表？')) return;
-  persist(() => api.archive()).then(list => {
-    if (list) { cards = list; render(); showToast('已封存 ' + n + ' 張卡片'); }
-  });
+  flush().then(() => {
+    if (pendingCount()) throw new Error('NETWORK');
+    updateNet('saving');
+    return api.archive();
+  }).then(list => {
+    cards = overlay(list); render(); offline = false; saveLocal(true);
+    showToast('已封存 ' + n + ' 張卡片');
+  }).catch(err => {
+    const code = errCode(err);
+    if (code === 'AUTH_REQUIRED') return authExpired();
+    if (code === 'NETWORK') { offline = true; showToast('封存需要網路連線，請連上網路後再試'); }
+    else { console.error(err); showToast('封存失敗，請稍後再試'); }
+  }).finally(() => updateNet());
 }
 
 $('refreshBtn').onclick = () => refresh(true);
@@ -883,7 +1046,11 @@ document.addEventListener('visibilitychange', () => { if (!document.hidden) refr
 buildBoard();
 try { const t = localStorage.getItem('kanban-tab'); if (STATUSES.indexOf(t) >= 0) activeTab = t; } catch (e) {}
 setTab(activeTab);
-if (token) $('who').textContent = userName;
+if (token) {
+  $('who').textContent = userName;
+  const local = loadLocal();
+  if (local) { cards = local; render(); }
+}
 try { const k = localStorage.getItem('kanban-color'); if (COLORS.some(c => c[0] === k)) setNewColor(k); } catch (e) {}
 refresh();
 

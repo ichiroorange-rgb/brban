@@ -2,7 +2,7 @@
  * - App 畫面：先連網取得最新版，沒網路時用快取（所以更新 GitHub 上的檔案後會自動生效）
  * - 資料（script.google.com）：完全不經過快取，永遠直接連線
  */
-const CACHE = 'kanban-v3';
+const CACHE = 'kanban-v4';
 const SHELL = [
   './',
   './index.html',
