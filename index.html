@@ -49,6 +49,7 @@
   .netbar { flex: none; text-align: center; font-size: 16px; padding: 6px 12px; margin: 0 16px 10px; border-radius: 8px;
     color: var(--text); background: color-mix(in srgb, var(--warn) 16%, var(--bg)); }
   .netbar[hidden] { display: none; }
+  .apiwarn { background: color-mix(in srgb, var(--danger) 14%, var(--bg)); text-align: left; line-height: 1.5; }
   .menuBtn { display: none; border: none; background: transparent; font-size: 24px; line-height: 1; padding: 4px 8px; }
   .menu { position: absolute; right: 12px; top: 48px; background: var(--card); border-radius: 12px; z-index: 20;
     box-shadow: 0 8px 30px rgba(0,0,0,.25); padding: 6px; display: none; min-width: 170px; }
@@ -258,6 +259,10 @@
   </div>
 
   <div class="netbar" id="netbar" hidden></div>
+  <div class="netbar apiwarn" id="apiWarn" hidden>
+    ⚠️ 資料窗口還是舊版，不認得「每日日記」。日記卡片會先留在這台裝置上不送出。<br>
+    請在 Apps Script 貼上新版 Code.gs，到「管理部署作業 → 編輯 → 版本選新版本 → 部署」。
+  </div>
 
   <main class="board" id="board"></main>
 
@@ -309,7 +314,8 @@
   <div class="toast" id="toast"><span id="toastText"></span><button id="toastUndo">復原</button></div>
 
 <script>
-const APP_VERSION = '2026-11-25';   // 每次更新畫面時改這個號碼
+const APP_VERSION = '2026-11-25b';
+const NEED_API = 4;   // 支援每日日記的資料窗口版本   // 每次更新畫面時改這個號碼
 const STATUSES = ['待辦', '完成', '每日日記', '資訊儲藏區'];
 const DIARY = '每日日記';
 const ICONS = {
@@ -359,6 +365,7 @@ function httpApi() {
     } catch (e) {
       throw new Error('NETWORK');
     }
+    noteApiVersion(data && data.apiVersion);
     if (!data || !data.ok) throw new Error((data && data.error) || 'ERROR');
     return data;
   };
@@ -501,12 +508,30 @@ function queueDelete(id) {
   flush();
 }
 
+/* ---------- 資料窗口版本檢查 ----------
+   舊版資料窗口不認得「每日日記」，會把日記卡片改成「待辦」。
+   確認資料窗口是新版之前，日記卡片先留在這台裝置上不送出。 */
+let apiVer = 0, apiSeen = false;
+try { apiVer = Number(localStorage.getItem('kanban-apiv') || 0); apiSeen = apiVer > 0; } catch (e) {}
+function apiOld() { return !isDemo && apiVer < NEED_API; }
+function isHeld(c) { return apiOld() && c && c.status === DIARY; }
+function heldCount() { return Object.values(outbox.saves).filter(isHeld).length; }
+function sendableCount() { return pendingCount() - heldCount(); }
+function noteApiVersion(v) {
+  const was = apiOld();
+  apiVer = Number(v || 0); apiSeen = true;
+  try { localStorage.setItem('kanban-apiv', String(apiVer)); } catch (e) {}
+  const w = document.getElementById('apiWarn');
+  if (w) w.hidden = !(apiOld() && token);
+  if (was && !apiOld()) setTimeout(flush, 0);   // 資料窗口更新了：把留著的日記送出
+}
+
 /** 把待同步清單送到試算表 */
 function flush() {
   if (flushing) { flushAgain = true; return flushing; }
-  if (!token || !pendingCount()) return Promise.resolve();
+  if (!token || !sendableCount()) return Promise.resolve();
   const snap = {};
-  Object.keys(outbox.saves).forEach(id => { snap[id] = JSON.stringify(outbox.saves[id]); });
+  Object.keys(outbox.saves).forEach(id => { if (!isHeld(outbox.saves[id])) snap[id] = JSON.stringify(outbox.saves[id]); });
   const list = Object.keys(snap).map(id => stripLocal(outbox.saves[id]));
   const dels = outbox.deletes.slice();
   inflight = new Set(Object.keys(snap));
@@ -537,7 +562,7 @@ function flush() {
       flushing = null;
       inflight = new Set();
       updateNet();
-      if (flushAgain) { flushAgain = false; if (!offline && pendingCount()) flush(); }
+      if (flushAgain) { flushAgain = false; if (!offline && sendableCount()) flush(); }
     });
   return flushing;
 }
@@ -934,7 +959,7 @@ function refresh(manual) {
   updateNet('saving');
   flush().then(() => {
     if (!token) throw new Error('AUTH_REQUIRED');
-    if (pendingCount()) throw new Error(offline ? 'NETWORK' : 'PENDING');   // 還有沒送出去的修改
+    if (sendableCount()) throw new Error(offline ? 'NETWORK' : 'PENDING');   // 還有沒送出去的修改
     return api.list();
   }).then(list => {
     cards = overlay(list);
@@ -968,6 +993,7 @@ function showLogin(msg, isErr) {
   cards = []; render();
   if (dlg.open) dlg.close();
   $('who').textContent = '';
+  $('apiWarn').hidden = true;
   $('lockMsg').textContent = msg || '請輸入帳號和 PIN 碼';
   $('lockMsg').classList.toggle('err', !!isErr);
   $('lockHint').textContent = isDemo ? '示範模式：任意帳號，PIN 碼 1234' : '';
@@ -1046,7 +1072,7 @@ function archive() {
   if (!n) return showToast('目前沒有已完成的卡片');
   if (!confirm('把 ' + n + ' 張已完成的卡片移到「封存」工作表？')) return;
   flush().then(() => {
-    if (pendingCount()) throw new Error('NETWORK');
+    if (sendableCount()) throw new Error('NETWORK');
     updateNet('saving');
     return api.archive();
   }).then(list => {
@@ -1085,6 +1111,7 @@ if (token) {
   $('who').textContent = userName;
   const local = loadLocal();
   if (local) { cards = local; render(); }
+  $('apiWarn').hidden = !(apiSeen && apiOld());
 }
 try { const k = localStorage.getItem('kanban-color'); if (COLORS.some(c => c[0] === k)) setNewColor(k); } catch (e) {}
 refresh();
