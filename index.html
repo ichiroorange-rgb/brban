@@ -58,7 +58,7 @@
   .menu button:active { background: var(--col); }
 
   /* ---------- 看板（電腦版：三欄並排） ---------- */
-  .board { display: grid; grid-template-columns: repeat(3, minmax(260px, 1fr)); gap: 12px;
+  .board { display: grid; grid-template-columns: repeat(4, minmax(230px, 1fr)); gap: 12px;
     padding: 0 16px 24px; align-items: start; }
   .ptr { display: none; }
   .col { background: var(--col); border-radius: 12px; padding: 10px; display: flex; flex-direction: column;
@@ -76,6 +76,7 @@
   .card .body { flex: 1; min-width: 0; }
   .card .t { word-break: break-word; }
   .col[data-status="完成"] .card .t { text-decoration: line-through; color: var(--muted); }
+  .ddate { font-size: 14px; font-weight: 600; color: var(--text); margin-left: 6px; vertical-align: 1px; }
   .lbl { display: inline-block; font-size: 13px; font-weight: 600; letter-spacing: .3px;
     color: var(--accent); background: color-mix(in srgb, var(--accent) 14%, transparent);
     border-radius: 4px; padding: 0 6px; margin-bottom: 4px; font-variant-numeric: tabular-nums; }
@@ -145,6 +146,7 @@
   dialog input, dialog textarea, dialog select { font: inherit; padding: 8px 10px; border-radius: 6px;
     border: 1px solid var(--border); background: var(--bg); color: var(--text); }
   dialog textarea { min-height: 90px; resize: vertical; }
+  dialog label[hidden] { display: none; }
   dialog input:focus, dialog textarea:focus, dialog select:focus { outline: none; border-color: var(--accent); }
   .grip:focus { outline: none; }
   .row { display: flex; gap: 10px; }
@@ -273,7 +275,8 @@
       <label>備註<textarea name="note"></textarea></label>
       <div class="row">
         <label>狀態<select name="status"></select></label>
-        <label>截止日<input name="due" type="date"></label>
+        <label id="dueField">截止日<input name="due" type="date"></label>
+        <label id="dateField" hidden>日記日期<input name="date" type="date"></label>
       </div>
       <label>顏色<div class="swRow" id="editColors"></div></label>
       <div class="stamp" id="stamp"></div>
@@ -306,11 +309,13 @@
   <div class="toast" id="toast"><span id="toastText"></span><button id="toastUndo">復原</button></div>
 
 <script>
-const APP_VERSION = '2026-10-23b';   // 每次更新畫面時改這個號碼
-const STATUSES = ['待辦', '完成', '資訊儲藏區'];
+const APP_VERSION = '2026-11-25';   // 每次更新畫面時改這個號碼
+const STATUSES = ['待辦', '完成', '每日日記', '資訊儲藏區'];
+const DIARY = '每日日記';
 const ICONS = {
   '待辦': '<svg viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="4"/><path d="M8 9.5h8M8 14.5h5"/></svg>',
   '完成': '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M8 12.5l2.7 2.7L16 9.8"/></svg>',
+  '每日日記': '<svg viewBox="0 0 24 24"><path d="M6 4.5h11a1.5 1.5 0 0 1 1.5 1.5v13.5H7.5A1.5 1.5 0 0 1 6 18z"/><path d="M6 18a1.5 1.5 0 0 1 1.5-1.5h11M9.5 8.5h5.5M9.5 11.5h4"/></svg>',
   '資訊儲藏區': '<svg viewBox="0 0 24 24"><path d="M3.5 7.5a2 2 0 0 1 2-2h4l2 2h7a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-13a2 2 0 0 1-2-2z"/></svg>'
 };
 const COLORS = [
@@ -381,10 +386,11 @@ function demoApi() {
     { id: 'd2', label: md() + '-T-02', title: '整理本週會議紀錄', note: '週五前寄給大家', status: '待辦', order: 1, due: '' },
     { id: 'd5', label: md() + '-T-04', title: '確認下週實習課分組名單', note: '', status: '待辦', order: 2, due: '', color: 'green' },
     { id: 'd3', label: md() + '-T-03', title: '繳交出差單', note: '', status: '完成', order: 0, due: '' },
+    { id: 'd6', label: md() + '-D-01', title: '今天和實習工場廠商討論設備配置，下週再確認報價', note: '', status: '每日日記', order: 0, due: '', color: '', date: today() },
     { id: 'd4', label: md() + '-C-01', title: '實習工場設備清單連結', note: '放在共用雲端「設備」資料夾', status: '資訊儲藏區', order: 0, due: '', color: 'blue' }
   ];
   const nextLabel = (all, status) => {
-    const p = md() + '-' + (status === '資訊儲藏區' ? 'C' : 'T') + '-';
+    const p = md() + '-' + (status === '資訊儲藏區' ? 'C' : status === DIARY ? 'D' : 'T') + '-';
     const n = all.reduce((m, c) => c.label && c.label.startsWith(p) ? Math.max(m, Number(c.label.slice(p.length)) || 0) : m, 0) + 1;
     return p + String(n).padStart(2, '0');
   };
@@ -595,7 +601,7 @@ function buildBoard() {
     <section class="col" data-status="${s}">
       <header><h2>${s}</h2><span class="count">0</span></header>
       <div class="list"></div>
-      <form class="add"><button type="button" class="sw swBtn" data-color="" aria-label="卡片顏色"></button><input placeholder="＋ 新增任務" enterkeyhint="done"></form>
+      <form class="add"><button type="button" class="sw swBtn" data-color="" aria-label="卡片顏色"></button><input placeholder="${s === DIARY ? '＋ 新增日記' : '＋ 新增任務'}" enterkeyhint="done"></form>
     </section>`).join('');
 
   $('tabs').innerHTML = STATUSES.map(s =>
@@ -641,6 +647,23 @@ function setTab(status) {
   $('composerInput').placeholder = '新增到「' + status + '」';
 }
 
+/* 2026-11-25 → 11/25（三） */
+function diaryDate(d) {
+  const p = String(d).split('-');
+  if (p.length !== 3) return d;
+  const w = '日一二三四五六'[new Date(+p[0], +p[1] - 1, +p[2]).getDay()];
+  return (+p[1]) + '/' + (+p[2]) + '（' + w + '）';
+}
+
+/* 日記欄依日期排序（新的在上），同一天再依順序 */
+function sortCards(status, a, b) {
+  if (status === DIARY) {
+    const da = a.date || '', db = b.date || '';
+    if (da !== db) return da < db ? 1 : -1;
+  }
+  return a.order - b.order;
+}
+
 function cardHtml(c) {
   const t = today();
   let due = '';
@@ -649,20 +672,22 @@ function cardHtml(c) {
     due = `<span class="due ${cls}">📅 ${esc(c.due.slice(5).replace('-', '/'))}${cls === 'overdue' ? ' 逾期' : cls === 'today' ? ' 今天' : ''}</span>`;
   }
   const note = c.note ? '<span>📝 備註</span>' : '';
-  const chk = c.status === '資訊儲藏區' ? '' :
+  const ddate = c.status === DIARY && c.date ? `<span class="ddate">${esc(diaryDate(c.date))}</span>` : '';
+  if (c.status === DIARY) due = '';   // 日記不顯示截止日
+  const chk = c.status === '資訊儲藏區' || c.status === DIARY ? '' :
     `<button class="chk" aria-label="${c.status === '完成' ? '標為未完成' : '標為完成'}">${CHECK}</button>`;
-  return `<div class="card" data-id="${esc(c.id)}" data-color="${esc(c.color || '')}">${chk}<div class="body"><span class="lbl">${esc(c.label || '…')}</span>` +
+  return `<div class="card" data-id="${esc(c.id)}" data-color="${esc(c.color || '')}">${chk}<div class="body"><span class="lbl">${esc(c.label || '…')}</span>${ddate}` +
     `<div class="t">${esc(c.title)}</div><div class="meta">${due}${note}</div></div></div>`;
 }
 
 function render() {
   document.querySelectorAll('.col').forEach(col => {
     const status = col.dataset.status;
-    const items = cards.filter(c => c.status === status).sort((a, b) => a.order - b.order);
+    const items = cards.filter(c => c.status === status).sort((a, b) => sortCards(status, a, b));
     col.querySelector('.list').innerHTML = items.map(cardHtml).join('');
     col.querySelector('.count').textContent = items.length;
     const tc = document.querySelector('.tab[data-status="' + status + '"] .tc');
-    tc.textContent = status === '完成' ? '' : items.length;   // 完成不顯示數字徽章
+    tc.textContent = status === '完成' || status === DIARY ? '' : items.length;   // 完成、日記不顯示數字徽章
     tc.toggleAttribute('data-zero', items.length === 0);
   });
 }
@@ -672,11 +697,13 @@ function addCard(status, title) {
   title = (title || '').trim();
   if (!title) return false;
   const max = peers(status).reduce((m, c) => Math.max(m, c.order), -1);
-  const card = { id: newId(), title, note: '', status, order: max + 1, due: '', color: newColor, _new: true };
+  const card = { id: newId(), title, note: '', status, order: max + 1, due: '', color: newColor, _new: true,
+                 date: status === DIARY ? today() : '' };
   cards.push(card);
   render();
   const list = document.querySelector('.col[data-status="' + status + '"] .list');
-  list.scrollTop = list.scrollHeight;
+  const el = list.querySelector('.card[data-id="' + card.id + '"]');
+  if (el) el.scrollIntoView({ block: 'nearest' });
   queueSave([card]);
   return true;
 }
@@ -687,6 +714,7 @@ function moveTo(c, status, toTop) {
   c.order = toTop ? others.reduce((m, x) => Math.min(m, x.order), 1) - 1
                   : others.reduce((m, x) => Math.max(m, x.order), -1) + 1;
   c.status = status;
+  if (status === DIARY && !c.date) c.date = today();
   render();
   queueSave([c]);
   showToast('已移到「' + status + '」', () => {
@@ -714,6 +742,7 @@ function syncFromDom() {
       if (!c) return;
       if (c.status !== status || c.order !== i) {
         c.status = status;
+        if (status === DIARY && !c.date) c.date = today();
         c.order = i;
         changed.push({ ...c });
       }
@@ -740,6 +769,7 @@ function bindSwipe(board) {
     if (!sw.on) {
       if (Math.abs(dx) > 12 && Math.abs(dx) > Math.abs(dy) * 1.5 && dx < 0) {
         const c = byId(sw.el.dataset.id);
+        if (c && c.status === DIARY) { sw = null; return; }   // 日記卡片不參與左滑
         sw.target = c && c.status === '資訊儲藏區' ? '待辦' : '資訊儲藏區';
         sw.el.dataset.hint = '移到「' + sw.target + '」';
         sw.el.classList.add('swiping');
@@ -795,6 +825,13 @@ function bindPullToRefresh(list) {
 const dlg = $('editDlg');
 const form = $('editForm');
 form.status.innerHTML = STATUSES.map(s => `<option>${s}</option>`).join('');
+/* 狀態是「每日日記」時顯示「日記日期」，其他顯示「截止日」 */
+function toggleDateField() {
+  const diary = form.status.value === DIARY;
+  $('dueField').hidden = diary;
+  $('dateField').hidden = !diary;
+}
+form.status.addEventListener('change', toggleDateField);
 
 function openEdit(id) {
   const c = byId(id);
@@ -804,6 +841,8 @@ function openEdit(id) {
   form.note.value = c.note || '';
   form.status.value = c.status;
   form.due.value = c.due || '';
+  form.date.value = c.date || today();
+  toggleDateField();
   $('editColors').innerHTML = swatches(c.color || '');
   const parts = [];
   if (c.label) parts.push('#' + c.label);
@@ -824,7 +863,8 @@ form.addEventListener('submit', e => {
   }
   c.title = form.title.value.trim() || c.title;
   c.note = form.note.value;
-  c.due = form.due.value;
+  if (c.status === DIARY) c.date = form.date.value || c.date || today();
+  else c.due = form.due.value;
   const on = $('editColors').querySelector('.sw.on');
   c.color = on ? on.dataset.color : '';
   dlg.close();
