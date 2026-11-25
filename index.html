@@ -49,8 +49,9 @@
   .netbar { flex: none; text-align: center; font-size: 16px; padding: 6px 12px; margin: 0 16px 10px; border-radius: 8px;
     color: var(--text); background: color-mix(in srgb, var(--warn) 16%, var(--bg)); }
   .netbar[hidden] { display: none; }
+  .netbar .fix { border: none; background: transparent; color: var(--accent); font-weight: 600; padding: 0 4px; text-decoration: underline; }
   .apiwarn { background: color-mix(in srgb, var(--danger) 14%, var(--bg)); text-align: left; line-height: 1.5; }
-  .menuBtn { display: none; border: none; background: transparent; font-size: 24px; line-height: 1; padding: 4px 8px; }
+  .menuBtn { display: block; border: none; background: transparent; font-size: 24px; line-height: 1; padding: 4px 8px; }
   .menu { position: absolute; right: 12px; top: 48px; background: var(--card); border-radius: 12px; z-index: 20;
     box-shadow: 0 8px 30px rgba(0,0,0,.25); padding: 6px; display: none; min-width: 170px; }
   .menu.open { display: block; }
@@ -253,6 +254,7 @@
     <div class="menu" id="menu">
       <button id="mRefresh">重新整理</button>
       <button id="mArchive">封存已完成</button>
+      <button id="mChangeApi">變更 Apps Script 網址</button>
       <button id="mLogout">登出這台裝置</button>
       <div class="ver" id="ver"></div>
     </div>
@@ -314,7 +316,7 @@
   <div class="toast" id="toast"><span id="toastText"></span><button id="toastUndo">復原</button></div>
 
 <script>
-const APP_VERSION = '2026-11-25b';
+const APP_VERSION = '2026-11-25c';
 const NEED_API = 4;   // 支援每日日記的資料窗口版本   // 每次更新畫面時改這個號碼
 const STATUSES = ['待辦', '完成', '每日日記', '資訊儲藏區'];
 const DIARY = '每日日記';
@@ -577,16 +579,32 @@ function updateNet(state) {
   const n = pendingCount();
   if (isDemo) idleSync();
   else if (state === 'saving') setSync('saving', '同步中…');
-  else if (offline) setSync('offline', n ? '離線中・' + n + ' 項待同步' : '離線中');
+  else if (offline) setSync('offline', (navigator.onLine ? '連不上資料窗口' : '離線中') + (n ? '・' + n + ' 項待同步' : ''));
   else if (n) setSync('saving', n + ' 項待同步');
   else idleSync();
   const bar = $('netbar');
   if (offline && token) {
-    bar.textContent = '離線中' + (n ? '・' + n + ' 項變更待同步' : '') + (lastSync ? '・資料更新於 ' + lastSync : '');
+    const tail = (n ? '・' + n + ' 項變更待同步' : '') + (lastSync ? '・資料更新於 ' + lastSync : '');
+    if (navigator.onLine) {
+      // 手機有網路卻連不上：多半是 Apps Script 網址失效（部署被封存或更換）
+      bar.innerHTML = '連不上資料窗口（網路正常）：Apps Script 網址可能已失效' + esc(tail) +
+        ' <button class="fix" id="fixApi">變更網址</button>';
+      $('fixApi').onclick = changeApi;
+    } else {
+      bar.textContent = '離線中' + tail;
+    }
     bar.hidden = false;
   } else {
     bar.hidden = true;
   }
+}
+
+/** 更換 Apps Script 網址：保留本機資料與待同步變更，重新登入後自動補送 */
+function changeApi() {
+  $('menu').classList.remove('open');
+  showLogin('請貼上新的 Apps Script 網址並登入' + (pendingCount() ? '（尚未同步的變更會保留）' : ''));
+  showApiField(true);
+  setTimeout(() => $('apiInput').focus(), 60);
 }
 
 /** 登入失效（例如被重設 PIN 碼）：保留本機資料，重新登入後自動補送 */
@@ -1091,6 +1109,7 @@ $('archiveBtn').onclick = archive;
 $('menuBtn').onclick = (e) => { e.stopPropagation(); $('menu').classList.toggle('open'); };
 $('mRefresh').onclick = () => { $('menu').classList.remove('open'); refresh(true); };
 $('mArchive').onclick = () => { $('menu').classList.remove('open'); archive(); };
+$('mChangeApi').onclick = changeApi;
 $('mLogout').onclick = () => { $('menu').classList.remove('open'); logout(); };
 $('logoutBtn').onclick = logout;
 document.addEventListener('click', e => { if (!e.target.closest('#menu')) $('menu').classList.remove('open'); });
